@@ -1,6 +1,8 @@
 package au.com.getkempt.controllers.authentication;
 
 
+import au.com.getkempt.responses.jwt.JWTResponse;
+import au.com.getkempt.services.authentication.JWTService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -10,13 +12,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/jwt")
 public class JWTController {
 
-    private final JwtService jwtService;
+    private final JWTService jwtService;
 
-    public JwtResponse generateStaffJWT() {
+    public JWTResponse generateStaffJWT() {
 
     }
 
-    public JwtResponse generateClientJWT() {
+    public JWTResponse generateClientJWT() {
 
     }
 

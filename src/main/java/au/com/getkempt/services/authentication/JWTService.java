@@ -14,5 +14,4 @@ public class JWTService {
     private final StaffAuthenticationService staffAuthenticationService;
     private final ClientAuthenticationService clientAuthenticationService;
 
-
 }
