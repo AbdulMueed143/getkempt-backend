@@ -1,6 +1,6 @@
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '4.0.5'
+	id 'org.springframework.boot' version '4.1.1'
 	id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -10,7 +10,7 @@ description = 'getkempt'
 
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(21)
+		languageVersion = JavaLanguageVersion.of(25)
 	}
 }
 
@@ -25,36 +25,40 @@ repositories {
 }
 
 dependencies {
-	//database
+	// Persistence — MongoDB via Spring Data
 	implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 
-	//starter web with validation
-	implementation 'org.springframework.boot:spring-boot-starter-web'
-	implementation "org.springframework.boot:spring-boot-starter-validation"
+	// Web (Spring MVC) + Bean Validation.
+	// Boot 4 renamed `spring-boot-starter-web` -> `spring-boot-starter-webmvc`.
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
 
-	//security
+	// Security
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 
-	//Documentation
-	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.5.0'
+	// API documentation (Swagger UI serving the bundled contract).
+	// springdoc 2.x targets Spring Boot 3 / Jackson 2 and fails to start on Boot 4;
+	// 3.1.x is the line built against Spring Boot 4.1.
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0'
 
-
+	// User-Agent classification for session device names (SessionService)
 	implementation 'is.tagomor.woothee:woothee-java:1.8.0'
 
-	//Json and lombok to avoid boilerplate code
+	// JWT (JJWT 0.13.x). jjwt-jackson is the runtime serializer; it ships its own
+	// Jackson 2 dependency and is independent of Boot 4's Jackson 3.
+	implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
+
+	// Argon2id password hashing (Spring Security's Argon2PasswordEncoder needs BouncyCastle)
+	implementation 'org.bouncycastle:bcprov-jdk18on:1.84'
+
+	// Lombok
 	compileOnly 'org.projectlombok:lombok'
-	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
-	implementation 'io.jsonwebtoken:jjwt-impl:0.12.6'
-	implementation 'io.jsonwebtoken:jjwt-jackson:0.11.5'
-	implementation 'com.google.code.gson:gson:2.10.1'
-
-
-	implementation 'org.apache.commons:commons-lang3:3.18.0'
 	annotationProcessor 'org.projectlombok:lombok'
-	testImplementation 'org.springframework.boot:spring-boot-starter-test'
-	implementation 'com.nimbusds:nimbus-jose-jwt:10.0.2'
 
-	//security
+	// Test
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
 }
 

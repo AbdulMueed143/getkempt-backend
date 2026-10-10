@@ -13,5 +13,5 @@ import org.springframework.stereotype.Component;
 @NoArgsConstructor
 @Data
 public class OneTimePasscodeConfigurations {
-
+    private int length;
 }

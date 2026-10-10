@@ -6,14 +6,18 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
 
+/**
+ * Device / session details captured when a <em>client</em> (customer) authenticates.
+ * Placeholder for the out-of-scope customer OTP surface; nothing persists to it yet.
+ */
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Document(collection = "staff_authentication_details")
+@Document(collection = "client_authentication_details")
 public class ClientAuthenticationDetails {
 
     @Id
@@ -23,9 +27,9 @@ public class ClientAuthenticationDetails {
     private String sessionId;
 
     @Indexed
-    private String staffId;
+    private String clientId;
 
-    private String staffShopId;
+    private String clientShopId;
     private String email;
     private String os;
     private String osVersion;

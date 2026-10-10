@@ -1,0 +1,71 @@
+server:
+  port: ${SERVER_PORT:4000}
+
+spring:
+  application:
+    name: getkempt
+  # Spring Boot 4.0 moved the Mongo *connection* properties from `spring.data.mongodb`
+  # to `spring.mongodb` (see the 4.0 migration guide). Using the old prefix here was
+  # silently ignored, so Boot fell back to its default `mongodb://localhost/test` DB.
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27017/getkempt}
+    # Explicit so we never fall back to Mongo's shared default `test` DB (whose foreign
+    # docs would otherwise break our unique-index builds on this machine).
+    database: ${MONGODB_DATABASE:getkempt}
+  data:
+    # `auto-index-creation` still requires Spring Data, so it keeps the old prefix.
+    mongodb:
+      auto-index-creation: true
+  jackson:
+    # Omitted JSON booleans/numbers fall back to the Java default instead of 400-ing,
+    # so optional primitive fields on request DTOs behave like optionals.
+    deserialization:
+      fail-on-null-for-primitives: false
+
+# Serve the bundled contract (src/main/resources/static/openapi.yaml) in Swagger UI
+# instead of the springdoc annotation-scan, so the live docs match the source-of-truth spec.
+springdoc:
+  swagger-ui:
+    url: /openapi.yaml
+    path: /swagger-ui.html
+
+application:
+  configurations:
+    jwt:
+      secret: "${JWT_SECRET:your-256-bit-secret-change-in-production-must-be-at-least-32-chars}"
+      staff-token-ttl-minutes: 480      # 8 hours — portal session
+      client-token-ttl-minutes: 60      # 1 hour — mobile, with silent refresh
+      refresh-token-ttl-days: 30
+      issuer: getkempt
+    otp:
+      length: 6
+      ttl-minutes: 5
+      max-attempts: 3
+    temp-password:
+      length: 9
+    pagination:
+      default-limit: 25
+      max-limit: 100
+    idempotency:
+      ttl-hours: 24
+    booking:
+      # discretization bucket (minutes) for the per-staff slot lock used to make
+      # concurrent same-slot booking creation safe (Mongo equivalent of a Postgres
+      # GiST exclusion constraint). Must be <= the smallest slotInterval (5).
+      slot-lock-bucket-minutes: 5
+    outbox:
+      # How often OutboxDispatcher polls for due messages. Kept close to the
+      # "every 10 sec" cadence docs/07-notifications.md describes for the
+      # (not-yet-built) reminder-dispatch worker, since this infra is designed
+      # to be that worker's foundation too.
+      poll-interval-ms: 5000
+      batch-size: 50
+      max-attempts: 6
+      base-backoff-seconds: 10
+      max-backoff-seconds: 3600
+    google-places:
+      # Server-side only — never sent to the frontend. The frontend collects a
+      # placeId via Google's Place Autocomplete widget (its own, separately
+      # restricted browser API key) and sends only that id to us at signup.
+      api-key: "${GOOGLE_PLACES_API_KEY:}"
+      default-photo-max-width-px: 800
