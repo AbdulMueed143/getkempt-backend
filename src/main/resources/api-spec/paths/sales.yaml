@@ -1,0 +1,91 @@
+# =============================================================================
+#  Sales — POS checkout of retail Product line items. Two payment rails:
+#  online (Stripe Connect, same as Bookings) or in_store (validated against
+#  StoreSettings.inStoreMethods). See schemas.yaml §21.
+# =============================================================================
+
+collection:
+  get:
+    tags: [Sales]
+    summary: List sales. Non-read-all callers are scoped to their own staffId.
+    operationId: listSales
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - $ref: "../components/parameters.yaml#/sort"
+      - name: status
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/SaleStatus" }
+      - name: clientId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: staffId
+        in: query
+        schema: { type: string, format: uuid }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/Sale" }
+  post:
+    tags: [Sales]
+    summary: Ring up a retail sale. Requires sales.create.
+    operationId: createSale
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/SaleCreateRequest" }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/SaleCreateResponse" }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+
+item:
+  parameters:
+    - $ref: "../components/parameters.yaml#/saleId"
+  get:
+    tags: [Sales]
+    summary: Get a sale.
+    operationId: getSale
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Sale" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+
+void:
+  parameters:
+    - $ref: "../components/parameters.yaml#/saleId"
+  post:
+    tags: [Sales]
+    summary: Void a sale (restores stock, cancels any PaymentIntent). Requires sales.read.all (owner/manager).
+    operationId: voidSale
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/SaleVoidRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Sale" }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }

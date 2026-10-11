@@ -1,0 +1,105 @@
+# =============================================================================
+#  Webhooks — inbound delivery endpoints for upstream providers.
+#
+#  These are NOT exposed to clients. They are signed and authenticated by
+#  per-provider mechanisms (Stripe-Signature, etc.). All payloads are stored
+#  raw in the events table for replay.
+#
+#  Outbound webhooks (GetKempt → tenant systems) follow the WebhookEnvelope
+#  shape — see docs/07-notifications.md for the event catalogue.
+# =============================================================================
+
+stripe:
+  post:
+    tags: [Webhooks]
+    summary: Stripe webhook ingress.
+    description: |
+      Handles the events:
+        - `payment_intent.succeeded` — capture funds, mark booking paid
+        - `payment_intent.payment_failed` — surface alert + retry logic
+        - `charge.refunded` — sync refund state
+        - `payout.paid` — bell alert
+        - `account.updated` — refresh ConnectStatus
+        - `invoice.paid` — for our own subscription billing
+        - `customer.subscription.updated` / `.deleted`
+
+      Idempotent on Stripe's `event.id`.
+    operationId: stripeWebhook
+    security:
+      - apiKey: []  # Stripe-Signature header validation
+    parameters:
+      - name: Stripe-Signature
+        in: header
+        required: true
+        schema: { type: string }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            description: Raw Stripe event payload — see Stripe docs.
+    responses:
+      "200":
+        description: Acknowledged.
+      "400":
+        description: Invalid signature.
+
+twilio:
+  post:
+    tags: [Webhooks]
+    summary: Twilio SMS delivery status webhook.
+    description: |
+      Updates the per-reminder / per-campaign-recipient delivery status
+      (queued → sent → delivered / undelivered / failed).
+    operationId: twilioStatusWebhook
+    security:
+      - webhookSignature: []
+    requestBody:
+      required: true
+      content:
+        application/x-www-form-urlencoded:
+          schema:
+            type: object
+            properties:
+              MessageSid:    { type: string }
+              MessageStatus: { type: string }
+              To:            { type: string }
+              ErrorCode:     { type: string }
+    responses:
+      "200": { description: Acknowledged. }
+
+sendgrid:
+  post:
+    tags: [Webhooks]
+    summary: SendGrid email event webhook (open, click, bounce, etc.).
+    operationId: sendgridEventWebhook
+    security:
+      - webhookSignature: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: array
+            description: Array of SendGrid events — see SendGrid docs.
+            items:
+              type: object
+    responses:
+      "200": { description: Acknowledged. }
+
+expo:
+  post:
+    tags: [Webhooks]
+    summary: Expo push notification delivery receipt webhook.
+    operationId: expoPushStatusWebhook
+    security:
+      - webhookSignature: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+    responses:
+      "200": { description: Acknowledged. }

@@ -1,0 +1,236 @@
+# =============================================================================
+#  Reminders — automated rule engine for booking events.
+#
+#  Each ReminderRule binds an event ("appointment_reminder") + timing
+#  ("24h before") + channels (["email","sms"]) + template. The backend
+#  worker watches booking events and schedules the right channels at the
+#  right time.
+# =============================================================================
+
+rules:
+  get:
+    tags: [Reminders]
+    summary: List reminder rules.
+    operationId: listReminderRules
+    parameters:
+      - name: event
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/ReminderEvent" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/ReminderRule" }
+  post:
+    tags: [Reminders]
+    summary: Create a reminder rule.
+    operationId: createReminderRule
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ReminderRuleCreateRequest" }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/ReminderRule" }
+      "409":
+        description: Event already has a rule (for events that disallow multiples).
+
+rule:
+  parameters:
+    - $ref: "../components/parameters.yaml#/ruleId"
+  get:
+    tags: [Reminders]
+    summary: Get a reminder rule.
+    operationId: getReminderRule
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/ReminderRule" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+  patch:
+    tags: [Reminders]
+    summary: Update a reminder rule.
+    operationId: updateReminderRule
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ReminderRuleCreateRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/ReminderRule" }
+  delete:
+    tags: [Reminders]
+    summary: Delete a reminder rule.
+    operationId: deleteReminderRule
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+toggle:
+  parameters:
+    - $ref: "../components/parameters.yaml#/ruleId"
+  post:
+    tags: [Reminders]
+    summary: Enable / disable a reminder rule.
+    operationId: toggleReminderRule
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [enabled]
+            properties:
+              enabled: { type: boolean }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/ReminderRule" }
+
+test:
+  parameters:
+    - $ref: "../components/parameters.yaml#/ruleId"
+  post:
+    tags: [Reminders]
+    summary: Send a test reminder to the requested recipient.
+    description: |
+      Useful for validating templates before going live. Cost is on the
+      shop's account; SMS credits decrement by 1 per test.
+    operationId: testReminderRule
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ReminderTestRequest" }
+    responses:
+      "202":
+        description: Queued.
+      "402":
+        description: Insufficient SMS credits.
+
+settings:
+  get:
+    tags: [Reminders]
+    summary: Get global reminder settings.
+    operationId: getReminderSettings
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/GlobalReminderSettings" }
+  patch:
+    tags: [Reminders]
+    summary: Update global reminder settings (master switch).
+    operationId: updateReminderSettings
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              masterEnabled: { type: boolean }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/GlobalReminderSettings" }
+
+stats:
+  get:
+    tags: [Reminders]
+    summary: Aggregate reminder delivery + impact stats.
+    operationId: getReminderStats
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/ReminderStats" }
+
+templates:
+  get:
+    tags: [Reminders]
+    summary: List built-in template starters per event.
+    operationId: listReminderTemplates
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  event:    { $ref: "../components/schemas.yaml#/ReminderEvent" }
+                  label:    { type: string }
+                  template: { $ref: "../components/schemas.yaml#/ReminderTemplate" }
+
+templateVariables:
+  get:
+    tags: [Reminders]
+    summary: List supported `{{template_variables}}`.
+    operationId: listTemplateVariables
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                required: [key, label, example]
+                properties:
+                  key:     { type: string }
+                  label:   { type: string }
+                  example: { type: string }
+
+queue:
+  get:
+    tags: [Reminders]
+    summary: Inspect the upcoming reminder queue (next 7 days).
+    description: |
+      Read-only — used by the Reminders page to show owners exactly which
+      reminders will fire and when. Useful for debugging.
+    operationId: getReminderQueue
+    parameters:
+      - name: hoursAhead
+        in: query
+        schema: { type: integer, default: 168, maximum: 720 }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  bookingId:   { type: string, format: uuid }
+                  ruleId:      { type: string, format: uuid }
+                  event:       { $ref: "../components/schemas.yaml#/ReminderEvent" }
+                  channel:     { $ref: "../components/schemas.yaml#/ReminderChannel" }
+                  fireAt:      { type: string, format: date-time }
+                  recipient:   { type: string }
+                  status:      { type: string, enum: [scheduled, sent, failed, cancelled] }

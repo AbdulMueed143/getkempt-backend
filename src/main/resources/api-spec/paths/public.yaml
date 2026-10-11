@@ -1,0 +1,220 @@
+# =============================================================================
+#  Public — unauthenticated client-facing booking widget.
+#
+#  Addressed by shop slug, not by tenant id. Aggressive rate-limiting plus
+#  hCaptcha on POST endpoints to prevent abuse. Returns ONLY the data
+#  intended to be visible publicly (no commission rates, no client lists,
+#  no internal notes).
+# =============================================================================
+
+shop:
+  parameters:
+    - $ref: "../components/parameters.yaml#/shopSlug"
+  get:
+    tags: [Public]
+    summary: Get the public profile of a shop by slug.
+    operationId: getPublicShop
+    security: []
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/PublicShop" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+
+services:
+  parameters:
+    - $ref: "../components/parameters.yaml#/shopSlug"
+  get:
+    tags: [Public]
+    summary: List the shop's bookable services.
+    description: Filtered to services where `onlineBookingEnabled = true`.
+    operationId: getPublicServices
+    security: []
+    parameters:
+      - name: category
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/ServiceCategory" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/PublicService" }
+
+packages:
+  parameters:
+    - $ref: "../components/parameters.yaml#/shopSlug"
+  get:
+    tags: [Public]
+    summary: List the shop's bookable packages.
+    operationId: getPublicPackages
+    security: []
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/Package" }
+
+staff:
+  parameters:
+    - $ref: "../components/parameters.yaml#/shopSlug"
+  get:
+    tags: [Public]
+    summary: List the shop's bookable staff members.
+    operationId: getPublicStaff
+    security: []
+    parameters:
+      - name: serviceId
+        in: query
+        description: Filter to staff who perform this service.
+        schema: { type: string, format: uuid }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/PublicStaff" }
+
+slots:
+  parameters:
+    - $ref: "../components/parameters.yaml#/shopSlug"
+  get:
+    tags: [Public]
+    summary: Search available slots for a given service / package / date.
+    description: |
+      Public version of `/bookings/slots/search` — no auth required, but
+      with stricter rate limits and reduced data (no surcharge breakdown).
+    operationId: getPublicSlots
+    security: []
+    parameters:
+      - name: date
+        in: query
+        required: true
+        schema: { type: string, format: date }
+      - name: serviceId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: packageId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: staffId
+        in: query
+        schema: { type: string, format: uuid }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                slots:
+                  type: array
+                  items: { $ref: "../components/schemas.yaml#/AvailableSlot" }
+
+bookings:
+  parameters:
+    - $ref: "../components/parameters.yaml#/shopSlug"
+  post:
+    tags: [Public]
+    summary: Create a booking from the public widget.
+    description: |
+      Creates (or matches by email/phone) a client record, then books.
+      If the shop requires a deposit / full upfront payment, returns a
+      `PaymentIntent` that the widget must confirm with Stripe.js. Until
+      the intent succeeds, the booking is held in `pending` for 10 minutes
+      then auto-cancels.
+    operationId: createPublicBooking
+    security: []
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/PublicBookingCreateRequest" }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/PublicBookingResponse" }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+      "429": { $ref: "../components/responses.yaml#/TooManyRequests" }
+
+booking:
+  parameters:
+    - name: token
+      in: path
+      required: true
+      schema: { type: string }
+  get:
+    tags: [Public]
+    summary: Look up a public booking by its token (self-service portal).
+    description: |
+      The booking response carries an opaque `token`; the manage URL embeds
+      it as the path segment. Token is single-shop scoped and expires after
+      the appointment date + 30 days.
+    operationId: getPublicBooking
+    security: []
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Booking" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+
+cancel:
+  parameters:
+    - name: token
+      in: path
+      required: true
+      schema: { type: string }
+  post:
+    tags: [Public]
+    summary: Cancel a booking from the client-side self-service link.
+    description: |
+      Cancellation rules: respects the shop's policy. If within a fee window,
+      the response contains the fee amount and a confirmation flag the
+      client must echo back.
+    operationId: cancelPublicBooking
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              reason: { type: string }
+              acceptFee: { type: boolean, default: false }
+    responses:
+      "200":
+        description: Cancelled.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                booking:    { $ref: "../components/schemas.yaml#/Booking" }
+                feeCharged: { $ref: "../components/schemas.yaml#/Money", nullable: true }
+      "402":
+        description: A cancellation fee applies — re-submit with `acceptFee=true` to proceed.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                feeAmount: { $ref: "../components/schemas.yaml#/Money" }
+                policy:    { type: string }

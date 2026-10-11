@@ -1,0 +1,113 @@
+# =============================================================================
+#  Products — retail catalogue a shop stocks for sale. See docs/06-payments.md
+#  addendum and schemas.yaml §21 for the paymentChannel/inStoreMethod design.
+# =============================================================================
+
+collection:
+  get:
+    tags: [Products]
+    summary: List products.
+    operationId: listProducts
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - $ref: "../components/parameters.yaml#/sort"
+      - name: category
+        in: query
+        schema: { type: string }
+      - name: activeOnly
+        in: query
+        schema: { type: boolean }
+      - name: q
+        in: query
+        description: Search by name.
+        schema: { type: string }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/Product" }
+  post:
+    tags: [Products]
+    summary: Create a product. Requires products.manage (owner/manager).
+    operationId: createProduct
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ProductWriteRequest" }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Product" }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }
+
+item:
+  parameters:
+    - $ref: "../components/parameters.yaml#/productId"
+  get:
+    tags: [Products]
+    summary: Get a product.
+    operationId: getProduct
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Product" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+  patch:
+    tags: [Products]
+    summary: Update a product. Requires products.manage.
+    operationId: updateProduct
+    parameters:
+      - $ref: "../components/parameters.yaml#/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ProductWriteRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Product" }
+      "412": { $ref: "../components/responses.yaml#/PreconditionFailed" }
+  delete:
+    tags: [Products]
+    summary: Soft-delete a product. Requires products.manage.
+    operationId: deleteProduct
+    responses:
+      "204": { description: Deleted. }
+
+stockAdjustments:
+  parameters:
+    - $ref: "../components/parameters.yaml#/productId"
+  post:
+    tags: [Products]
+    summary: Adjust stock quantity (restock or shrinkage correction). Requires products.manage.
+    operationId: adjustProductStock
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/StockAdjustRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Product" }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }

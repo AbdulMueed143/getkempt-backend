@@ -1,0 +1,54 @@
+# =============================================================================
+#  Uploads — direct-to-object-storage via presigned URLs.
+#
+#  Flow:
+#    1. Client calls POST /uploads/presign with {purpose, filename, contentType, sizeBytes}.
+#    2. Backend returns a presigned PUT URL + an uploadId.
+#    3. Client PUTs the binary directly to S3/R2 — bypasses the API server.
+#    4. Client calls POST /uploads/{uploadId}/confirm to validate the file was uploaded.
+#    5. Client passes the returned `key` to whichever resource endpoint needs it
+#       (e.g. PUT /staff/{id}/avatar).
+# =============================================================================
+
+presign:
+  post:
+    tags: [Uploads]
+    summary: Get a presigned URL for direct upload to object storage.
+    operationId: presignUpload
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/UploadPresignRequest" }
+    responses:
+      "201":
+        description: Presigned URL issued.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/UploadPresignResponse" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+
+confirm:
+  parameters:
+    - name: uploadId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  post:
+    tags: [Uploads]
+    summary: Confirm an upload completed (triggers thumbnail generation).
+    description: |
+      The backend verifies the object exists at the expected key, runs
+      optional virus scan / image processing (resize, EXIF strip), and
+      returns the final CDN URL.
+    operationId: confirmUpload
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/UploadConfirmResponse" }
+      "404":
+        description: Upload was not found at the expected key (timed out, etc.).

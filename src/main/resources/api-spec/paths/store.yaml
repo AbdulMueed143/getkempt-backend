@@ -1,0 +1,390 @@
+# =============================================================================
+#  Store — tenant-level profile + settings + holidays + policies.
+#
+#  There is exactly ONE StoreProfile per tenant — IDs are implied from the
+#  bearer token's `shop_id` claim and never appear in URLs.
+# =============================================================================
+
+profile:
+  get:
+    tags: [Store]
+    summary: Get the shop profile.
+    operationId: getStoreProfile
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StoreProfile" }
+  patch:
+    tags: [Store]
+    summary: Update the shop profile.
+    operationId: updateStoreProfile
+    parameters:
+      - $ref: "../components/parameters.yaml#/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/StoreProfileUpdateRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StoreProfile" }
+      "412": { $ref: "../components/responses.yaml#/PreconditionFailed" }
+
+logo:
+  put:
+    tags: [Store]
+    summary: Set the shop logo.
+    operationId: setStoreLogo
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [uploadId]
+            properties:
+              uploadId: { type: string, format: uuid }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StoreProfile" }
+  delete:
+    tags: [Store]
+    summary: Remove the shop logo.
+    operationId: deleteStoreLogo
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+googlePhoto:
+  parameters:
+    - name: photoReference
+      in: path
+      required: true
+      schema: { type: string }
+    - name: maxWidthPx
+      in: query
+      required: false
+      schema: { type: integer, default: 800 }
+  get:
+    tags: [Store]
+    summary: >
+      Resolve a Google Place photo and redirect to it. The frontend uses this
+      same-origin URL as an <img> src — never a Google URL — so the Places API
+      key stays server-side. See StoreGooglePlacePhoto.proxyUrl.
+    operationId: getStoreGooglePhoto
+    responses:
+      "302": { description: Redirect to the resolved Google photo URL. }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+
+settings:
+  get:
+    tags: [Store]
+    summary: Get store settings (scheduling + payment + policies).
+    operationId: getStoreSettings
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StoreSettings" }
+  patch:
+    tags: [Store]
+    summary: Update store settings.
+    operationId: updateStoreSettings
+    parameters:
+      - $ref: "../components/parameters.yaml#/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/StoreSettingsUpdateRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StoreSettings" }
+      "412": { $ref: "../components/responses.yaml#/PreconditionFailed" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+
+holidays:
+  get:
+    tags: [Store]
+    summary: List holidays / closures.
+    operationId: listHolidays
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/Holiday" }
+  post:
+    tags: [Store]
+    summary: Add a custom holiday.
+    operationId: createHoliday
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name, date]
+            properties:
+              name:           { type: string }
+              date:           { type: string, format: date }
+              appliesTo:
+                oneOf:
+                  - type: string
+                    enum: [all]
+                  - type: array
+                    items: { type: string, format: uuid }
+              hasSurcharge:   { type: boolean, default: false }
+              surchargeType:  { $ref: "../components/schemas.yaml#/SurchargeType" }
+              surchargeValue: { type: number }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Holiday" }
+
+holiday:
+  parameters:
+    - name: holidayId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  patch:
+    tags: [Store]
+    summary: Update a holiday.
+    operationId: updateHoliday
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/Holiday" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Holiday" }
+  delete:
+    tags: [Store]
+    summary: Delete a holiday.
+    operationId: deleteHoliday
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+holidaysImport:
+  post:
+    tags: [Store]
+    summary: Bulk-import public holidays for a region + year.
+    operationId: importHolidays
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/HolidayImportRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                imported: { type: integer }
+                skipped:  { type: integer, description: "Already present, ignored." }
+                holidays:
+                  type: array
+                  items: { $ref: "../components/schemas.yaml#/Holiday" }
+
+surchargeRules:
+  get:
+    tags: [Store]
+    summary: List surcharge rules.
+    operationId: listSurchargeRules
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/SurchargeRule" }
+  post:
+    tags: [Store]
+    summary: Create a surcharge rule.
+    operationId: createSurchargeRule
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/SurchargeRule" }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/SurchargeRule" }
+
+surchargeRule:
+  parameters:
+    - name: ruleId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  patch:
+    tags: [Store]
+    summary: Update a surcharge rule.
+    operationId: updateSurchargeRule
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/SurchargeRule" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/SurchargeRule" }
+  delete:
+    tags: [Store]
+    summary: Delete a surcharge rule.
+    operationId: deleteSurchargeRule
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+cancellationPolicy:
+  get:
+    tags: [Store]
+    summary: Get the cancellation policy + fee rules.
+    operationId: getCancellationPolicy
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                policyText:    { type: string }
+                noShowFeeType: { $ref: "../components/schemas.yaml#/FeeType" }
+                noShowFeeValue: { type: number }
+                autoCharge:    { type: boolean }
+                rules:
+                  type: array
+                  items: { $ref: "../components/schemas.yaml#/CancellationFeeRule" }
+  put:
+    tags: [Store]
+    summary: Replace the cancellation policy + fee rules in one shot.
+    operationId: setCancellationPolicy
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              policyText:    { type: string }
+              noShowFeeType: { $ref: "../components/schemas.yaml#/FeeType" }
+              noShowFeeValue: { type: number }
+              autoCharge:    { type: boolean }
+              rules:
+                type: array
+                items: { $ref: "../components/schemas.yaml#/CancellationFeeRule" }
+    responses:
+      "200":
+        description: OK.
+
+cancellationRules:
+  get:
+    tags: [Store]
+    summary: List cancellation fee rules.
+    operationId: listCancellationFeeRules
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/CancellationFeeRule" }
+  post:
+    tags: [Store]
+    summary: Add a cancellation fee rule (tier).
+    operationId: createCancellationFeeRule
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/CancellationFeeRule" }
+    responses:
+      "201":
+        description: Created.
+
+cancellationRule:
+  parameters:
+    - name: ruleId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  patch:
+    tags: [Store]
+    summary: Update a cancellation fee rule.
+    operationId: updateCancellationFeeRule
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/CancellationFeeRule" }
+    responses:
+      "200": { description: OK }
+  delete:
+    tags: [Store]
+    summary: Remove a cancellation fee rule.
+    operationId: deleteCancellationFeeRule
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+privacyPolicy:
+  get:
+    tags: [Store]
+    summary: Get the privacy policy text.
+    operationId: getPrivacyPolicy
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: { type: string }
+                updatedAt: { type: string, format: date-time }
+  put:
+    tags: [Store]
+    summary: Replace the privacy policy text.
+    operationId: setPrivacyPolicy
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [text]
+            properties:
+              text: { type: string }
+    responses:
+      "200": { description: OK }

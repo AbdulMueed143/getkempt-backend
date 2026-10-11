@@ -1,0 +1,173 @@
+# =============================================================================
+#  Campaigns — async broadcast email / SMS / push to a client segment.
+#
+#  The frontend NEVER enumerates recipients for large audiences. Instead it
+#  POSTs a filter descriptor + message. The backend resolves the recipient
+#  list server-side, queues delivery jobs, and reports back via webhooks.
+# =============================================================================
+
+collection:
+  get:
+    tags: [Campaigns]
+    summary: List campaigns.
+    operationId: listCampaigns
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - name: status
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/CampaignStatus" }
+      - name: channel
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/CampaignChannel" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/Campaign" }
+  post:
+    tags: [Campaigns]
+    summary: Dispatch a campaign (immediate or scheduled).
+    description: |
+      The endpoint queues a job and returns immediately. SMS campaigns
+      decrement SMS credits — call `/campaigns/estimate` first to validate.
+    operationId: dispatchCampaign
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/CampaignPayload" }
+    responses:
+      "202":
+        description: Queued.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Campaign" }
+      "402":
+        description: Insufficient SMS credits.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Error" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+
+item:
+  parameters:
+    - $ref: "../components/parameters.yaml#/campaignId"
+  get:
+    tags: [Campaigns]
+    summary: Get a campaign.
+    operationId: getCampaign
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Campaign" }
+
+cancel:
+  parameters:
+    - $ref: "../components/parameters.yaml#/campaignId"
+  post:
+    tags: [Campaigns]
+    summary: Cancel a scheduled or in-flight campaign.
+    description: |
+      Already-sent messages cannot be recalled — only pending deliveries are stopped.
+    operationId: cancelCampaign
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Campaign" }
+      "409":
+        description: Campaign already completed.
+
+estimate:
+  post:
+    tags: [Campaigns]
+    summary: Preflight estimate — recipient count + channel cost.
+    description: Used to render the "send to ~120 clients" confirmation in the UI.
+    operationId: estimateCampaign
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [filter, channel]
+            properties:
+              filter:  { $ref: "../components/schemas.yaml#/CampaignFilter" }
+              channel: { $ref: "../components/schemas.yaml#/CampaignChannel" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/CampaignEstimateResponse" }
+
+preview:
+  post:
+    tags: [Campaigns]
+    summary: Render the message with placeholders substituted (no send).
+    operationId: previewCampaign
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [channel, message]
+            properties:
+              channel: { $ref: "../components/schemas.yaml#/CampaignChannel" }
+              subject: { type: string }
+              message: { type: string }
+              sampleClientId:
+                type: string
+                format: uuid
+                nullable: true
+                description: Pick a real client to substitute their data; otherwise placeholder values.
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                renderedSubject: { type: string }
+                renderedBody:    { type: string }
+                charCount:       { type: integer }
+                smsSegmentCount: { type: integer, nullable: true }
+
+stats:
+  parameters:
+    - $ref: "../components/parameters.yaml#/campaignId"
+  get:
+    tags: [Campaigns]
+    summary: Per-campaign delivery + engagement stats.
+    operationId: getCampaignStats
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sent:         { type: integer }
+                delivered:    { type: integer }
+                failed:       { type: integer }
+                opened:       { type: integer }
+                clicked:      { type: integer }
+                unsubscribed: { type: integer }
+                deliveryRatePercent: { type: number, format: float }

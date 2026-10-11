@@ -1,0 +1,289 @@
+# =============================================================================
+#  Availability — weekly schedule + date overrides per staff member.
+# =============================================================================
+
+weekly:
+  parameters:
+    - $ref: "../components/parameters.yaml#/staffId"
+  get:
+    tags: [Availability]
+    summary: Get a staff member's recurring weekly schedule.
+    operationId: getWeeklySchedule
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/WeeklySchedule" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+  put:
+    tags: [Availability]
+    summary: Replace the weekly schedule.
+    operationId: setWeeklySchedule
+    parameters:
+      - $ref: "../components/parameters.yaml#/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [timezone, days]
+            properties:
+              timezone: { type: string }
+              days:
+                type: array
+                minItems: 7
+                maxItems: 7
+                items: { $ref: "../components/schemas.yaml#/DaySchedule" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/WeeklySchedule" }
+      "412": { $ref: "../components/responses.yaml#/PreconditionFailed" }
+      "422":
+        description: Time slots overlap, end ≤ start, or > 24h day.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/ValidationError" }
+
+overrides:
+  parameters:
+    - $ref: "../components/parameters.yaml#/staffId"
+  get:
+    tags: [Availability]
+    summary: List date-specific overrides for a staff member.
+    operationId: listOverrides
+    parameters:
+      - $ref: "../components/parameters.yaml#/fromDate"
+      - $ref: "../components/parameters.yaml#/toDate"
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/AvailabilityOverride" }
+  post:
+    tags: [Availability]
+    summary: Create a date override.
+    description: |
+      Used for sick days, half-days, or one-off extended hours.
+      Overrides take precedence over the weekly schedule on the given date.
+    operationId: createOverride
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [date, isWorking]
+            properties:
+              date:      { type: string, format: date }
+              isWorking: { type: boolean }
+              slots:
+                type: array
+                items: { $ref: "../components/schemas.yaml#/TimeSlot" }
+              note:      { type: string }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/AvailabilityOverride" }
+      "409":
+        description: An override already exists for this date — use PATCH on /overrides/{id}.
+
+override:
+  parameters:
+    - $ref: "../components/parameters.yaml#/staffId"
+    - name: overrideId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  patch:
+    tags: [Availability]
+    summary: Update an existing override.
+    operationId: updateOverride
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              isWorking: { type: boolean }
+              slots:
+                type: array
+                items: { $ref: "../components/schemas.yaml#/TimeSlot" }
+              note: { type: string }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/AvailabilityOverride" }
+  delete:
+    tags: [Availability]
+    summary: Delete an override (returns to the recurring schedule for that date).
+    operationId: deleteOverride
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+copy:
+  parameters:
+    - $ref: "../components/parameters.yaml#/staffId"
+  post:
+    tags: [Availability]
+    summary: Copy this staff member's schedule onto other staff.
+    description: |
+      Convenience endpoint used by the "Apply same hours to other staff"
+      button on the Availability page.
+    operationId: copySchedule
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/AvailabilityCopyRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                appliedTo: { type: array, items: { type: string, format: uuid } }
+
+timeline:
+  parameters:
+    - $ref: "../components/parameters.yaml#/staffId"
+  get:
+    tags: [Availability]
+    summary: Flattened day-by-day availability (working / off / partial).
+    description: |
+      Returns a compact array of `{date, status}` over a date range —
+      ideal for rendering availability dots on a calendar picker.
+    operationId: getAvailabilityTimeline
+    parameters:
+      - name: from
+        in: query
+        required: true
+        schema: { type: string, format: date }
+      - name: to
+        in: query
+        required: true
+        schema: { type: string, format: date }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  date:    { type: string, format: date }
+                  status:  { type: string, enum: [off, working, partial, override] }
+                  totalMinutes: { type: integer }
+
+breaks:
+  parameters:
+    - $ref: "../components/parameters.yaml#/staffId"
+  get:
+    tags: [Availability]
+    summary: List recurring break slots for the staff member.
+    operationId: listBreaks
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/TimeSlot" }
+  post:
+    tags: [Availability]
+    summary: Add a recurring break slot to all working days.
+    operationId: createBreak
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [startTime, endTime]
+            properties:
+              startTime: { type: string }
+              endTime:   { type: string }
+              label:     { type: string }
+              days:
+                type: array
+                description: When empty, applies to all working days.
+                items: { $ref: "../components/schemas.yaml#/DayOfWeek" }
+    responses:
+      "201":
+        description: Created.
+
+break:
+  parameters:
+    - $ref: "../components/parameters.yaml#/staffId"
+    - name: breakId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  delete:
+    tags: [Availability]
+    summary: Remove a recurring break slot.
+    operationId: deleteBreak
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+bulkUpdate:
+  post:
+    tags: [Availability]
+    summary: Update many staff schedules in one transaction.
+    description: Owner-only. Used by the "shop-wide hours" wizard.
+    operationId: bulkUpdateAvailability
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [updates]
+            properties:
+              updates:
+                type: array
+                items:
+                  type: object
+                  required: [staffId, days]
+                  properties:
+                    staffId: { type: string, format: uuid }
+                    days:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/DaySchedule" }
+    responses:
+      "200":
+        description: OK.
+
+holidays:
+  get:
+    tags: [Availability]
+    summary: List shop-wide closures affecting availability.
+    description: Alias of `/store/holidays` — returned here for client convenience.
+    operationId: getAvailabilityHolidays
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/Holiday" }

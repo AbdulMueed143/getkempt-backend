@@ -1,0 +1,1900 @@
+# =============================================================================
+#  GetKempt — Data Models (~120 schemas).
+#  Grouped by domain section. Referenced via:
+#      $ref: "../components/schemas.yaml#/<SchemaName>"
+# =============================================================================
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  0. CORE / SHARED
+# ─────────────────────────────────────────────────────────────────────────────
+
+Error:
+  type: object
+  required: [code, message]
+  properties:
+    code:
+      type: string
+      description: Machine-readable error code (snake_case).
+      example: not_found
+    message:
+      type: string
+      description: Human-readable summary suitable for displaying to the end user.
+    requestId:
+      type: string
+      description: Server-assigned trace id for log lookups.
+    docsUrl:
+      type: string
+      format: uri
+      description: Optional link to the relevant section of the developer docs.
+
+ValidationError:
+  allOf:
+    - $ref: "#/Error"
+    - type: object
+      required: [fields]
+      properties:
+        fields:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field:
+                type: string
+                description: JSON-pointer-ish path, e.g. `services[0].price`.
+              message:
+                type: string
+              code:
+                type: string
+                description: Field-level code, e.g. `too_short`, `invalid_email`.
+
+Money:
+  type: object
+  description: All monetary values in the API. Whole cents — never floats.
+  required: [amountCents, currency]
+  properties:
+    amountCents:
+      type: integer
+      minimum: 0
+      example: 6500
+    currency:
+      type: string
+      enum: [AUD]
+      default: AUD
+
+Page:
+  type: object
+  description: Standard envelope returned by every list endpoint.
+  required: [data, pageInfo]
+  properties:
+    data:
+      type: array
+      items: {}
+    pageInfo:
+      $ref: "#/PageInfo"
+
+PageInfo:
+  type: object
+  required: [hasNextPage]
+  properties:
+    nextCursor:
+      type: string
+      nullable: true
+      description: Pass back as `?cursor=` for the next page.
+    hasNextPage:
+      type: boolean
+    totalCount:
+      type: integer
+      description: Only returned when cheap to compute; treat as advisory.
+
+Timestamp:
+  type: string
+  format: date-time
+  description: ISO-8601 UTC, e.g. `2026-03-12T04:30:00Z`.
+
+Color:
+  type: string
+  pattern: "^#[0-9A-Fa-f]{6}$"
+  description: 6-digit hex colour, lowercase preferred.
+  example: "#1B3163"
+
+ImageRef:
+  type: object
+  description: A stored image — only the `key` is canonical; `url` is signed/CDN.
+  required: [key, url]
+  properties:
+    key:
+      type: string
+      description: Storage key, e.g. `staff/s1/avatar.webp`.
+    url:
+      type: string
+      format: uri
+      description: CDN or signed URL the client should display.
+    width:
+      type: integer
+    height:
+      type: integer
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  1. AUTH & USERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+UserRole:
+  type: string
+  enum: [barber, salon_owner, admin]
+  description: Account-level role — distinct from `StaffRole` which is per-shop.
+
+User:
+  type: object
+  required: [id, email, firstName, lastName, role, createdAt]
+  properties:
+    id:           { type: string, format: uuid }
+    email:        { type: string, format: email }
+    emailVerified: { type: boolean }
+    firstName:    { type: string }
+    lastName:     { type: string }
+    role:         { $ref: "#/UserRole" }
+    businessName: { type: string, nullable: true }
+    avatarUrl:    { type: string, format: uri, nullable: true }
+    shopId:       { type: string, format: uuid, nullable: true,
+                    description: Tenant the user belongs to. Null for unowned admins. }
+    createdAt:    { $ref: "#/Timestamp" }
+
+AuthTokens:
+  type: object
+  required: [accessToken, refreshToken, expiresIn]
+  properties:
+    accessToken:
+      type: string
+      description: Short-lived (15 min) JWT for the Authorization header.
+    refreshToken:
+      type: string
+      description: Long-lived (30 day) opaque token. Stored as httpOnly cookie + body.
+    expiresIn:
+      type: integer
+      description: Seconds until accessToken expires.
+      example: 900
+    tokenType:
+      type: string
+      default: Bearer
+
+AuthSession:
+  type: object
+  required: [user, tokens]
+  properties:
+    user:   { $ref: "#/User" }
+    tokens: { $ref: "#/AuthTokens" }
+
+LoginRequest:
+  type: object
+  required: [email, password]
+  properties:
+    email:      { type: string, format: email }
+    password:   { type: string, format: password, minLength: 1 }
+    rememberMe: { type: boolean, default: false }
+
+SignupRequest:
+  type: object
+  required: [firstName, lastName, email, businessName, role, password, placeId, agreeToTerms]
+  properties:
+    firstName:     { type: string, minLength: 1, maxLength: 50 }
+    lastName:      { type: string, minLength: 1, maxLength: 50 }
+    email:         { type: string, format: email }
+    businessName:  { type: string, minLength: 1, maxLength: 100 }
+    role:          { type: string, enum: [barber, salon_owner] }
+    password:
+      type: string
+      format: password
+      minLength: 8
+      description: Must include ≥1 uppercase and ≥1 digit.
+    placeId:
+      type: string
+      description: >
+        Google Place id for the shop's listing, selected via the frontend's Place
+        Autocomplete widget. The ONLY location input signup accepts — address,
+        geo-coordinates, rating, and photos are all resolved server-side from this
+        id and are never free-typed. A lookup failure never blocks signup; it just
+        leaves the enrichment fields blank until re-synced.
+    agreeToTerms:  { type: boolean, enum: [true] }
+
+ForgotPasswordRequest:
+  type: object
+  required: [email]
+  properties:
+    email: { type: string, format: email }
+
+ResetPasswordRequest:
+  type: object
+  required: [token, password]
+  properties:
+    token:    { type: string, description: From the password reset email link. }
+    password: { type: string, format: password, minLength: 8 }
+
+ChangePasswordRequest:
+  type: object
+  required: [currentPassword, newPassword]
+  properties:
+    currentPassword: { type: string, format: password }
+    newPassword:     { type: string, format: password, minLength: 8 }
+
+VerifyEmailRequest:
+  type: object
+  required: [token]
+  properties:
+    token: { type: string }
+
+Session:
+  type: object
+  description: Active sign-in session — listed under `/users/me/sessions`.
+  required: [id, createdAt, lastSeenAt, current]
+  properties:
+    id:          { type: string, format: uuid }
+    deviceName:  { type: string, nullable: true, example: "Chrome on Mac" }
+    ip:          { type: string, nullable: true }
+    location:    { type: string, nullable: true, example: "Melbourne, AU" }
+    createdAt:   { $ref: "#/Timestamp" }
+    lastSeenAt:  { $ref: "#/Timestamp" }
+    current:     { type: boolean }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  2. STAFF
+# ─────────────────────────────────────────────────────────────────────────────
+
+StaffRole:
+  type: string
+  enum: [owner, manager, staff]
+
+StaffStatus:
+  type: string
+  enum: [active, on_leave, inactive]
+
+CommissionType:
+  type: string
+  enum: [hourly, commission, salary]
+
+StaffMember:
+  type: object
+  required:
+    - id
+    - firstName
+    - lastName
+    - email
+    - phone
+    - role
+    - status
+    - services
+    - commissionType
+    - avatarColor
+    - calendarColor
+    - startDate
+    - createdAt
+  properties:
+    id:             { type: string, format: uuid }
+    userId:         { type: string, format: uuid, nullable: true,
+                      description: Linked user account if the staff member can log in. }
+    firstName:      { type: string, maxLength: 50 }
+    lastName:       { type: string, maxLength: 50 }
+    email:          { type: string, format: email }
+    phone:          { type: string, description: E.164 format preferred. }
+    bio:            { type: string, maxLength: 500 }
+    specialization: { type: string, maxLength: 100 }
+    avatarImage:    { $ref: "#/ImageRef", nullable: true }
+    avatarColor:    { $ref: "#/Color" }
+    calendarColor:  { $ref: "#/Color" }
+    role:           { $ref: "#/StaffRole" }
+    status:         { $ref: "#/StaffStatus" }
+    services:
+      type: array
+      items: { type: string, format: uuid }
+      description: Service IDs the staff member can perform.
+    commissionType: { $ref: "#/CommissionType" }
+    commissionRate:
+      type: number
+      format: float
+      nullable: true
+      description: |
+        Meaning depends on commissionType:
+          hourly     → AUD per hour
+          commission → 0-100 (%) of service price
+          salary     → annual AUD
+    startDate:      { type: string, format: date }
+    createdAt:      { $ref: "#/Timestamp" }
+    deletedAt:      { type: string, format: date-time, nullable: true }
+
+StaffCreateRequest:
+  type: object
+  required: [firstName, lastName, email, phone, role, services, commissionType, startDate]
+  properties:
+    firstName:      { type: string }
+    lastName:       { type: string }
+    email:          { type: string, format: email }
+    phone:          { type: string }
+    bio:            { type: string }
+    specialization: { type: string }
+    role:           { $ref: "#/StaffRole" }
+    status:         { $ref: "#/StaffStatus", default: active }
+    services:       { type: array, items: { type: string, format: uuid } }
+    commissionType: { $ref: "#/CommissionType" }
+    commissionRate: { type: number, nullable: true }
+    startDate:      { type: string, format: date }
+    avatarColor:    { $ref: "#/Color" }
+    calendarColor:  { $ref: "#/Color" }
+    sendInvite:
+      type: boolean
+      default: true
+      description: When true, send an email invitation so the staff member can log in.
+
+StaffUpdateRequest:
+  $ref: "#/StaffCreateRequest"
+
+StaffInvitation:
+  type: object
+  required: [id, email, role, status, expiresAt, createdAt]
+  properties:
+    id:        { type: string, format: uuid }
+    email:     { type: string, format: email }
+    role:      { $ref: "#/StaffRole" }
+    status:    { type: string, enum: [pending, accepted, expired, revoked] }
+    expiresAt: { $ref: "#/Timestamp" }
+    acceptedAt: { type: string, format: date-time, nullable: true }
+    createdAt: { $ref: "#/Timestamp" }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  3. CLIENTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+Client:
+  type: object
+  required: [id, firstName, lastName, email, phone, totalBookings, joinedAt]
+  properties:
+    id:               { type: string, format: uuid }
+    firstName:        { type: string }
+    lastName:         { type: string }
+    email:            { type: string, format: email }
+    phone:            { type: string }
+    totalBookings:    { type: integer, minimum: 0 }
+    lifetimeSpendCents: { type: integer, minimum: 0 }
+    lastBookingDate:  { type: string, format: date-time, nullable: true }
+    nextBookingDate:  { type: string, format: date-time, nullable: true }
+    preferredStaffId: { type: string, format: uuid, nullable: true }
+    joinedAt:         { type: string, format: date-time }
+    marketingOptIn:   { type: boolean, default: true }
+    smsOptIn:         { type: boolean, default: true }
+    emailOptIn:       { type: boolean, default: true }
+    notes:            { type: string, nullable: true,
+                        description: One-line summary; full notes are in `ClientNote`. }
+    tags:
+      type: array
+      items: { type: string }
+    createdAt:        { $ref: "#/Timestamp" }
+    deletedAt:        { type: string, format: date-time, nullable: true }
+
+ClientCreateRequest:
+  type: object
+  required: [firstName, lastName, phone]
+  properties:
+    firstName:      { type: string }
+    lastName:       { type: string }
+    email:          { type: string, format: email, nullable: true }
+    phone:          { type: string }
+    preferredStaffId: { type: string, format: uuid, nullable: true }
+    notes:          { type: string }
+    tags:           { type: array, items: { type: string } }
+    marketingOptIn: { type: boolean, default: true }
+
+ClientUpdateRequest:
+  $ref: "#/ClientCreateRequest"
+
+ClientNote:
+  type: object
+  required: [id, body, createdAt, createdByStaffId]
+  properties:
+    id:               { type: string, format: uuid }
+    body:             { type: string, maxLength: 4000 }
+    pinned:           { type: boolean, default: false }
+    createdAt:        { $ref: "#/Timestamp" }
+    createdByStaffId: { type: string, format: uuid }
+
+ClientMergeRequest:
+  type: object
+  description: |
+    Merge two duplicate client records. All bookings, notes and loyalty
+    progress of `sourceClientId` are reassigned to the path-param client,
+    then the source is soft-deleted.
+  required: [sourceClientId]
+  properties:
+    sourceClientId: { type: string, format: uuid }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  4. SERVICES
+# ─────────────────────────────────────────────────────────────────────────────
+
+ServiceCategory:
+  type: string
+  enum: [hair, barber, nails, beauty, lash_brow, massage, other]
+
+ServiceStatus:
+  type: string
+  enum: [active, inactive, archived]
+
+Service:
+  type: object
+  required:
+    - id
+    - name
+    - category
+    - description
+    - durationMinutes
+    - bufferMinutes
+    - price
+    - depositRequired
+    - status
+    - onlineBookingEnabled
+    - staffIds
+    - createdAt
+  properties:
+    id:                   { type: string, format: uuid }
+    name:                 { type: string, maxLength: 80 }
+    category:             { $ref: "#/ServiceCategory" }
+    description:          { type: string, maxLength: 1000 }
+    image:                { $ref: "#/ImageRef", nullable: true }
+    durationMinutes:      { type: integer, minimum: 5, maximum: 600 }
+    bufferMinutes:        { type: integer, minimum: 0, maximum: 240 }
+    price:                { $ref: "#/Money" }
+    depositRequired:      { type: boolean }
+    depositAmount:        { $ref: "#/Money", nullable: true }
+    status:               { $ref: "#/ServiceStatus" }
+    onlineBookingEnabled: { type: boolean }
+    staffIds:
+      type: array
+      items: { type: string, format: uuid }
+    displayOrder:         { type: integer }
+    createdAt:            { $ref: "#/Timestamp" }
+    updatedAt:            { $ref: "#/Timestamp" }
+
+ServiceCreateRequest:
+  type: object
+  required: [name, category, durationMinutes, price, staffIds]
+  properties:
+    name:                 { type: string }
+    category:             { $ref: "#/ServiceCategory" }
+    description:          { type: string }
+    durationMinutes:      { type: integer }
+    bufferMinutes:        { type: integer, default: 0 }
+    price:                { $ref: "#/Money" }
+    depositRequired:      { type: boolean, default: false }
+    depositAmount:        { $ref: "#/Money", nullable: true }
+    status:               { $ref: "#/ServiceStatus", default: active }
+    onlineBookingEnabled: { type: boolean, default: true }
+    staffIds:             { type: array, items: { type: string, format: uuid } }
+
+ServiceUpdateRequest:
+  $ref: "#/ServiceCreateRequest"
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  5. PACKAGES (bundled services)
+# ─────────────────────────────────────────────────────────────────────────────
+
+PackageStatus:
+  type: string
+  enum: [active, inactive, archived]
+
+DiscountType:
+  type: string
+  enum: [percentage, fixed]
+
+Package:
+  type: object
+  required:
+    - id
+    - name
+    - serviceIds
+    - discountEnabled
+    - status
+    - staffIds
+    - createdAt
+  properties:
+    id:                    { type: string, format: uuid }
+    name:                  { type: string, maxLength: 80 }
+    description:           { type: string, maxLength: 1000 }
+    image:                 { $ref: "#/ImageRef", nullable: true }
+    serviceIds:
+      type: array
+      minItems: 2
+      items: { type: string, format: uuid }
+    customDurationMinutes: { type: integer, nullable: true,
+                             description: Null means "sum of included services". }
+    discountEnabled:       { type: boolean }
+    discountType:          { $ref: "#/DiscountType", nullable: true }
+    discountValue:         { type: number, nullable: true,
+                             description: Percent (0-100) or AUD amount (whole dollars). }
+    status:                { $ref: "#/PackageStatus" }
+    onlineBookingEnabled:  { type: boolean }
+    staffIds:
+      type: array
+      items: { type: string, format: uuid }
+    # ── Derived (server computes at read-time, never stored) ──
+    basePrice:             { $ref: "#/Money" }
+    discountedPrice:       { $ref: "#/Money" }
+    effectiveDurationMinutes: { type: integer }
+    createdAt:             { $ref: "#/Timestamp" }
+    updatedAt:             { $ref: "#/Timestamp" }
+
+PackageCreateRequest:
+  type: object
+  required: [name, serviceIds, staffIds]
+  properties:
+    name:                  { type: string }
+    description:           { type: string }
+    serviceIds:            { type: array, minItems: 2, items: { type: string, format: uuid } }
+    customDurationMinutes: { type: integer, nullable: true }
+    discountEnabled:       { type: boolean, default: false }
+    discountType:          { $ref: "#/DiscountType", nullable: true }
+    discountValue:         { type: number, nullable: true }
+    status:                { $ref: "#/PackageStatus", default: active }
+    onlineBookingEnabled:  { type: boolean, default: true }
+    staffIds:              { type: array, items: { type: string, format: uuid } }
+
+PackageUpdateRequest:
+  $ref: "#/PackageCreateRequest"
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  6. AVAILABILITY (per-staff weekly schedules + date overrides)
+# ─────────────────────────────────────────────────────────────────────────────
+
+DayOfWeek:
+  type: integer
+  minimum: 0
+  maximum: 6
+  description: 0 = Sunday, 6 = Saturday (matches JS Date#getDay).
+
+SlotType:
+  type: string
+  enum: [work, break]
+
+TimeSlot:
+  type: object
+  required: [id, startTime, endTime, type]
+  properties:
+    id:        { type: string, format: uuid }
+    startTime: { type: string, pattern: "^[0-2][0-9]:[0-5][0-9]$",
+                 description: "HH:MM in shop-local timezone, e.g. \"09:30\"." }
+    endTime:   { type: string, pattern: "^[0-2][0-9]:[0-5][0-9]$" }
+    type:      { $ref: "#/SlotType" }
+    label:     { type: string, nullable: true }
+
+DaySchedule:
+  type: object
+  required: [dayOfWeek, isWorking, slots]
+  properties:
+    dayOfWeek: { $ref: "#/DayOfWeek" }
+    isWorking: { type: boolean }
+    slots:
+      type: array
+      items: { $ref: "#/TimeSlot" }
+
+WeeklySchedule:
+  type: object
+  required: [staffId, timezone, days, updatedAt]
+  properties:
+    staffId:   { type: string, format: uuid }
+    timezone:  { type: string, example: "Australia/Melbourne" }
+    days:
+      type: array
+      minItems: 7
+      maxItems: 7
+      items: { $ref: "#/DaySchedule" }
+    updatedAt: { $ref: "#/Timestamp" }
+
+AvailabilityOverride:
+  type: object
+  required: [id, staffId, date, isWorking, slots, createdAt]
+  properties:
+    id:        { type: string, format: uuid }
+    staffId:   { type: string, format: uuid }
+    date:      { type: string, format: date }
+    isWorking: { type: boolean }
+    slots:
+      type: array
+      items: { $ref: "#/TimeSlot" }
+    note:      { type: string, nullable: true }
+    createdAt: { $ref: "#/Timestamp" }
+
+AvailabilityCopyRequest:
+  type: object
+  description: Copy a staff member's weekly schedule onto other staff.
+  required: [targetStaffIds]
+  properties:
+    targetStaffIds:
+      type: array
+      items: { type: string, format: uuid }
+    overwriteOverrides:
+      type: boolean
+      default: false
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  7. BOOKINGS
+# ─────────────────────────────────────────────────────────────────────────────
+
+BookingStatus:
+  type: string
+  enum: [pending, confirmed, in_progress, completed, cancelled, no_show]
+
+BookingSource:
+  type: string
+  enum: [app, manual, walk_in, online_widget, recurring]
+
+CancellationReason:
+  type: string
+  enum: [client_request, staff_unavailable, shop_closed, no_show, other]
+
+Booking:
+  type: object
+  required:
+    - id
+    - clientName
+    - staffId
+    - staffName
+    - serviceName
+    - durationMinutes
+    - price
+    - startAt
+    - endAt
+    - status
+    - source
+    - createdAt
+  properties:
+    id:                { type: string, format: uuid }
+    clientId:          { type: string, format: uuid, nullable: true,
+                         description: Null only for walk-ins without a saved client record. }
+    clientName:        { type: string }
+    clientPhone:       { type: string, nullable: true }
+    clientEmail:       { type: string, format: email, nullable: true }
+    staffId:           { type: string, format: uuid }
+    staffName:         { type: string }
+    serviceId:         { type: string, format: uuid, nullable: true }
+    packageId:         { type: string, format: uuid, nullable: true }
+    serviceName:       { type: string,
+                         description: Snapshotted at booking time — survives service edits. }
+    durationMinutes:   { type: integer, minimum: 1 }
+    price:             { $ref: "#/Money" }
+    startAt:           { $ref: "#/Timestamp" }
+    endAt:             { $ref: "#/Timestamp" }
+    status:            { $ref: "#/BookingStatus" }
+    source:            { $ref: "#/BookingSource" }
+    notes:             { type: string, nullable: true }
+    cancellationReason: { $ref: "#/CancellationReason", nullable: true }
+    paymentIntentId:   { type: string, nullable: true,
+                         description: Stripe PaymentIntent (only if deposit/full payment taken). }
+    depositPaid:       { $ref: "#/Money", nullable: true }
+    inStoreMethodUsed: { $ref: "#/InStoreMethod", nullable: true,
+                         description: Set at completion time when payment was taken in person rather than online. }
+    surchargesApplied:
+      type: array
+      items: { $ref: "#/AppliedSurcharge" }
+    createdAt:         { $ref: "#/Timestamp" }
+    updatedAt:         { $ref: "#/Timestamp" }
+    version:           { type: integer,
+                         description: For optimistic locking — pass back in If-Match header. }
+
+AppliedSurcharge:
+  type: object
+  required: [label, amount]
+  properties:
+    label:  { type: string, example: "Public Holiday Surcharge" }
+    type:   { type: string, enum: [percentage, fixed_aud] }
+    value:  { type: number, description: Source value (e.g. 25 = 25%). }
+    amount: { $ref: "#/Money" }
+
+BookingCreateRequest:
+  type: object
+  required: [staffId, startAt]
+  properties:
+    staffId:     { type: string, format: uuid }
+    serviceId:   { type: string, format: uuid, nullable: true }
+    packageId:   { type: string, format: uuid, nullable: true }
+    startAt:     { $ref: "#/Timestamp" }
+    # ── Client identification — one of: ──
+    clientId:    { type: string, format: uuid, nullable: true,
+                   description: Use an existing client. }
+    client:
+      type: object
+      nullable: true
+      description: Create a client inline (for walk-ins / first-time bookings).
+      required: [firstName, lastName, phone]
+      properties:
+        firstName: { type: string }
+        lastName:  { type: string }
+        email:     { type: string, format: email, nullable: true }
+        phone:     { type: string }
+    source:      { $ref: "#/BookingSource", default: manual }
+    notes:       { type: string }
+    sendConfirmation: { type: boolean, default: true }
+    skipConflictCheck: { type: boolean, default: false,
+                        description: Owner override — books even if the slot looks taken. }
+
+BookingUpdateRequest:
+  type: object
+  description: Patch — pass only the fields to change.
+  properties:
+    staffId:    { type: string, format: uuid }
+    startAt:    { $ref: "#/Timestamp" }
+    serviceId:  { type: string, format: uuid }
+    notes:      { type: string }
+
+RescheduleRequest:
+  type: object
+  required: [newStartAt]
+  properties:
+    newStartAt: { $ref: "#/Timestamp" }
+    newStaffId: { type: string, format: uuid }
+    reason:     { type: string }
+    notifyClient: { type: boolean, default: true }
+
+CancelRequest:
+  type: object
+  required: [reason]
+  properties:
+    reason:         { $ref: "#/CancellationReason" }
+    note:           { type: string }
+    chargeFee:      { type: boolean, default: false,
+                      description: Apply the shop's cancellation fee policy. }
+    notifyClient:   { type: boolean, default: true }
+
+SlotSearchRequest:
+  type: object
+  required: [date]
+  properties:
+    date:      { type: string, format: date }
+    serviceId: { type: string, format: uuid, nullable: true }
+    packageId: { type: string, format: uuid, nullable: true }
+    staffId:   { type: string, format: uuid, nullable: true,
+                 description: "When omitted, returns slots across all qualified staff." }
+    intervalMinutes:
+      type: integer
+      description: Defaults to the shop's slotInterval setting.
+
+AvailableSlot:
+  type: object
+  required: [startAt, endAt, staffId, staffName]
+  properties:
+    startAt:   { $ref: "#/Timestamp" }
+    endAt:     { $ref: "#/Timestamp" }
+    staffId:   { type: string, format: uuid }
+    staffName: { type: string }
+    surchargeAmount: { $ref: "#/Money", nullable: true,
+                       description: Total surcharges that would be applied to a booking at this slot. }
+
+ConflictCheckRequest:
+  type: object
+  required: [staffId, startAt, durationMinutes]
+  properties:
+    staffId:         { type: string, format: uuid }
+    startAt:         { $ref: "#/Timestamp" }
+    durationMinutes: { type: integer }
+    ignoreBookingId: { type: string, format: uuid, nullable: true,
+                       description: Pass when rescheduling — ignores the booking itself. }
+
+ConflictCheckResponse:
+  type: object
+  required: [available]
+  properties:
+    available: { type: boolean }
+    conflicts:
+      type: array
+      items:
+        type: object
+        properties:
+          kind:    { type: string, enum: [booking, break, override, holiday, outside_hours] }
+          startAt: { $ref: "#/Timestamp" }
+          endAt:   { $ref: "#/Timestamp" }
+          label:   { type: string }
+
+BookingBulkRequest:
+  type: object
+  required: [bookingIds, action]
+  properties:
+    bookingIds: { type: array, items: { type: string, format: uuid } }
+    action:     { type: string, enum: [confirm, cancel, complete, no_show] }
+    reason:     { type: string }
+    notifyClients: { type: boolean, default: false }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  8. VISITS (post-appointment review)
+# ─────────────────────────────────────────────────────────────────────────────
+
+AppointmentStatus:
+  type: string
+  enum: [pending, completed, no_show, cancelled]
+
+AppointmentRecord:
+  type: object
+  required: [id, clientName, serviceName, durationMinutes, staffId, staffName, scheduledAt, status]
+  properties:
+    id:               { type: string, format: uuid }
+    bookingId:        { type: string, format: uuid }
+    clientId:         { type: string, format: uuid, nullable: true }
+    clientName:       { type: string }
+    serviceName:      { type: string }
+    durationMinutes:  { type: integer }
+    staffId:          { type: string, format: uuid }
+    staffName:        { type: string }
+    scheduledAt:      { $ref: "#/Timestamp" }
+    status:           { $ref: "#/AppointmentStatus" }
+    note:             { type: string, nullable: true }
+    statusUpdatedAt:  { type: string, format: date-time, nullable: true }
+    statusUpdatedByStaffId: { type: string, format: uuid, nullable: true }
+
+VisitMarkRequest:
+  type: object
+  properties:
+    note: { type: string, maxLength: 500 }
+
+VisitBulkRequest:
+  type: object
+  required: [appointmentIds, action]
+  properties:
+    appointmentIds: { type: array, items: { type: string, format: uuid } }
+    action:         { type: string, enum: [attended, no_show, cancelled] }
+    note:           { type: string }
+
+VisitStats:
+  type: object
+  required:
+    - pendingReviewCount
+    - attendedTodayCount
+    - noShowsLast7Days
+    - attendanceRatePercent
+  properties:
+    pendingReviewCount:     { type: integer }
+    attendedTodayCount:     { type: integer }
+    noShowsLast7Days:       { type: integer }
+    attendanceRatePercent:  { type: number, format: float }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  9. LOYALTY
+# ─────────────────────────────────────────────────────────────────────────────
+
+RewardType:
+  type: string
+  enum: [percentage, fixed, free_visit, free_item]
+
+TriggerType:
+  type: string
+  enum: [visits, spend]
+
+RedeemLocation:
+  type: string
+  enum: [own_shop, partner]
+
+ProgramStatus:
+  type: string
+  enum: [active, inactive, draft]
+
+LoyaltyProgram:
+  type: object
+  required:
+    - id
+    - sequenceOrder
+    - name
+    - rewardType
+    - rewardLabel
+    - redeemLocation
+    - triggerType
+    - triggerValue
+    - status
+    - createdAt
+  properties:
+    id:                  { type: string, format: uuid }
+    sequenceOrder:       { type: integer, minimum: 1 }
+    name:                { type: string, maxLength: 80 }
+    description:         { type: string, maxLength: 500 }
+    rewardType:          { $ref: "#/RewardType" }
+    rewardValue:         { type: number, nullable: true }
+    rewardLabel:         { type: string }
+    redeemLocation:      { $ref: "#/RedeemLocation" }
+    partnerName:         { type: string, nullable: true }
+    partnerAddress:      { type: string, nullable: true }
+    triggerType:         { $ref: "#/TriggerType" }
+    triggerValue:        { type: number, minimum: 1 }
+    programExpiryDate:   { type: string, format: date, nullable: true }
+    rewardExpiryDays:    { type: integer, nullable: true }
+    status:              { $ref: "#/ProgramStatus" }
+    totalEarned:         { type: integer }
+    totalRedeemed:       { type: integer }
+    createdAt:           { $ref: "#/Timestamp" }
+    updatedAt:           { $ref: "#/Timestamp" }
+
+LoyaltyProgramCreateRequest:
+  type: object
+  required: [name, rewardType, rewardLabel, redeemLocation, triggerType, triggerValue]
+  properties:
+    name:              { type: string }
+    description:       { type: string }
+    rewardType:        { $ref: "#/RewardType" }
+    rewardValue:       { type: number, nullable: true }
+    rewardLabel:       { type: string }
+    redeemLocation:    { $ref: "#/RedeemLocation" }
+    partnerName:       { type: string, nullable: true }
+    partnerAddress:    { type: string, nullable: true }
+    triggerType:       { $ref: "#/TriggerType" }
+    triggerValue:      { type: number }
+    programExpiryDate: { type: string, format: date, nullable: true }
+    rewardExpiryDays:  { type: integer, nullable: true }
+    status:            { $ref: "#/ProgramStatus", default: draft }
+
+ProgramReorderRequest:
+  type: object
+  required: [programIds]
+  properties:
+    programIds:
+      type: array
+      items: { type: string, format: uuid }
+      description: New order. Index 0 = sequenceOrder 1.
+
+ClientLoyaltyProgress:
+  type: object
+  required: [clientId, currentProgramId, progressValue, targetValue]
+  properties:
+    clientId:         { type: string, format: uuid }
+    currentProgramId: { type: string, format: uuid, nullable: true }
+    progressValue:    { type: number, description: visits so far OR cents spent so far }
+    targetValue:      { type: number }
+    history:
+      type: array
+      items:
+        type: object
+        properties:
+          programId:   { type: string, format: uuid }
+          earnedAt:    { $ref: "#/Timestamp" }
+          redeemedAt:  { type: string, format: date-time, nullable: true }
+
+LoyaltyReward:
+  type: object
+  description: A reward earned by a client — pending until redeemed.
+  required: [id, clientId, programId, status, earnedAt]
+  properties:
+    id:          { type: string, format: uuid }
+    clientId:    { type: string, format: uuid }
+    programId:   { type: string, format: uuid }
+    status:      { type: string, enum: [pending, redeemed, expired, revoked] }
+    earnedAt:    { $ref: "#/Timestamp" }
+    redeemedAt:  { type: string, format: date-time, nullable: true }
+    expiresAt:   { type: string, format: date-time, nullable: true }
+    redeemedAtBookingId: { type: string, format: uuid, nullable: true }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  10. STORE PROFILE
+# ─────────────────────────────────────────────────────────────────────────────
+
+BusinessType:
+  type: string
+  enum:
+    - barbershop
+    - hair_salon
+    - nail_salon
+    - beauty_salon
+    - day_spa
+    - massage_studio
+    - wellness_centre
+    - cosmetic_studio
+    - other
+
+StoreAddress:
+  type: object
+  required: [line1, suburb, state, postcode, country]
+  properties:
+    line1:    { type: string }
+    line2:    { type: string, nullable: true }
+    suburb:   { type: string }
+    state:    { type: string, example: VIC }
+    postcode: { type: string }
+    country:  { type: string, example: AU }
+    latitude: { type: number, format: float, nullable: true }
+    longitude: { type: number, format: float, nullable: true }
+    placeId:   { type: string, nullable: true,
+                 description: "Google Maps Place ID, if resolved." }
+
+StoreGooglePlacePhoto:
+  type: object
+  required: [photoReference, proxyUrl]
+  properties:
+    photoReference: { type: string,
+                      description: Opaque Google photo reference — never a directly-usable URL. }
+    widthPx:        { type: integer, nullable: true }
+    heightPx:       { type: integer, nullable: true }
+    proxyUrl:
+      type: string
+      description: >
+        Same-origin path (GET /store/profile/google-photos/{photoReference}) —
+        use this as the <img> src. The API key is applied server-side and never
+        reaches the client.
+
+StoreGooglePlace:
+  type: object
+  description: Enrichment pulled from the shop's linked Google Places listing at signup. Absent if no listing is linked or the lookup failed.
+  properties:
+    placeId:          { type: string }
+    rating:           { type: number, format: float, nullable: true, minimum: 0, maximum: 5 }
+    userRatingsTotal: { type: integer, nullable: true }
+    businessStatus:   { type: string, nullable: true }
+    googleMapsUri:    { type: string, format: uri, nullable: true }
+    photos:
+      type: array
+      items: { $ref: "#/StoreGooglePlacePhoto" }
+    lastSyncedAt:     { $ref: "#/Timestamp" }
+
+StoreProfile:
+  type: object
+  required: [id, shopName, slug, businessType, phone, email, address, timezone, updatedAt]
+  properties:
+    id:           { type: string, format: uuid }
+    slug:         { type: string,
+                    description: URL identifier for the public booking widget. }
+    shopName:     { type: string, maxLength: 100 }
+    businessType: { $ref: "#/BusinessType" }
+    description:  { type: string, nullable: true, maxLength: 1500 }
+    logo:         { $ref: "#/ImageRef", nullable: true }
+    phone:        { type: string }
+    email:        { type: string, format: email }
+    website:      { type: string, format: uri, nullable: true }
+    address:      { $ref: "#/StoreAddress" }
+    timezone:     { type: string, example: "Australia/Melbourne" }
+    instagram:    { type: string, nullable: true }
+    facebook:     { type: string, nullable: true }
+    tiktok:       { type: string, nullable: true }
+    googlePlace:  { $ref: "#/StoreGooglePlace", nullable: true }
+    updatedAt:    { $ref: "#/Timestamp" }
+
+StoreProfileUpdateRequest:
+  type: object
+  description: PATCH — all fields optional; pass only what changes.
+  properties:
+    shopName:     { type: string }
+    businessType: { $ref: "#/BusinessType" }
+    description:  { type: string }
+    phone:        { type: string }
+    email:        { type: string, format: email }
+    website:      { type: string, format: uri, nullable: true }
+    address:      { $ref: "#/StoreAddress" }
+    timezone:     { type: string }
+    instagram:    { type: string, nullable: true }
+    facebook:     { type: string, nullable: true }
+    tiktok:       { type: string, nullable: true }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  11. STORE SETTINGS
+# ─────────────────────────────────────────────────────────────────────────────
+
+BookingWindowUnit:
+  type: string
+  enum: [days, weeks, months]
+
+SurchargeType:
+  type: string
+  enum: [percentage, fixed_aud]
+
+SurchargeDay:
+  type: string
+  enum: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
+
+PaymentMode:
+  type: string
+  enum: [in_store, deposit, full_upfront]
+
+DepositType:
+  type: string
+  enum: [percentage, fixed_aud]
+
+FeeType:
+  type: string
+  enum: [percentage, fixed_aud, none]
+
+InStoreMethod:
+  type: string
+  enum: [card, cash, bank_transfer]
+
+Holiday:
+  type: object
+  required: [id, name, date, appliesTo, hasSurcharge]
+  properties:
+    id:             { type: string, format: uuid }
+    name:           { type: string }
+    date:           { type: string, format: date }
+    appliesTo:
+      oneOf:
+        - type: string
+          enum: [all]
+        - type: array
+          items: { type: string, format: uuid }
+    hasSurcharge:   { type: boolean }
+    surchargeType:  { $ref: "#/SurchargeType", nullable: true }
+    surchargeValue: { type: number, nullable: true }
+
+HolidayImportRequest:
+  type: object
+  description: Bulk-import official public holidays.
+  required: [region, year]
+  properties:
+    region: { type: string, example: VIC, description: AU state code. }
+    year:   { type: integer, example: 2026 }
+
+SurchargeRule:
+  type: object
+  required: [id, name, isActive, days, surchargeType, surchargeValue]
+  properties:
+    id:             { type: string, format: uuid }
+    name:           { type: string }
+    isActive:       { type: boolean }
+    days:           { type: array, items: { $ref: "#/SurchargeDay" } }
+    timeStart:      { type: string, nullable: true, pattern: "^[0-2][0-9]:[0-5][0-9]$" }
+    timeEnd:        { type: string, nullable: true, pattern: "^[0-2][0-9]:[0-5][0-9]$" }
+    surchargeType:  { $ref: "#/SurchargeType" }
+    surchargeValue: { type: number }
+
+CancellationFeeRule:
+  type: object
+  required: [id, label, withinHours, feeType, feeValue]
+  properties:
+    id:          { type: string, format: uuid }
+    label:       { type: string }
+    withinHours: { type: integer, minimum: 0 }
+    feeType:     { type: string, enum: [percentage, fixed_aud] }
+    feeValue:    { type: number, minimum: 0 }
+
+StoreSettings:
+  type: object
+  required:
+    - bookingWindowValue
+    - bookingWindowUnit
+    - slotInterval
+    - paymentMode
+    - depositType
+    - depositValue
+    - noShowFeeType
+    - noShowFeeValue
+    - autoCharge
+  properties:
+    bookingWindowValue:   { type: integer, minimum: 1 }
+    bookingWindowUnit:    { $ref: "#/BookingWindowUnit" }
+    slotInterval:         { type: integer, enum: [5, 10, 15, 20, 30, 45, 60] }
+    holidays:             { type: array, items: { $ref: "#/Holiday" } }
+    surchargeRules:       { type: array, items: { $ref: "#/SurchargeRule" } }
+    paymentMode:          { $ref: "#/PaymentMode" }
+    depositType:          { $ref: "#/DepositType" }
+    depositValue:         { type: number }
+    inStoreMethods:       { type: array, items: { $ref: "#/InStoreMethod" } }
+    stripeConnected:      { type: boolean }
+    noShowFeeType:        { $ref: "#/FeeType" }
+    noShowFeeValue:       { type: number }
+    autoCharge:           { type: boolean }
+    cancellationFeeRules: { type: array, items: { $ref: "#/CancellationFeeRule" } }
+    cancellationPolicy:   { type: string }
+    privacyPolicy:        { type: string }
+    updatedAt:            { $ref: "#/Timestamp" }
+
+StoreSettingsUpdateRequest:
+  $ref: "#/StoreSettings"
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  12. CAMPAIGNS (broadcast messaging)
+# ─────────────────────────────────────────────────────────────────────────────
+
+CampaignAudience:
+  type: string
+  enum: [all, upcoming, staff, selected]
+
+CampaignChannel:
+  type: string
+  enum: [email, sms, push]
+
+CampaignStatus:
+  type: string
+  enum: [queued, sending, sent, partial_failure, cancelled, scheduled]
+
+CampaignFilter:
+  type: object
+  required: [audience]
+  properties:
+    audience:  { $ref: "#/CampaignAudience" }
+    staffId:   { type: string, format: uuid, nullable: true }
+    clientIds: { type: array, items: { type: string, format: uuid } }
+
+CampaignPayload:
+  type: object
+  required: [filter, channel, message]
+  properties:
+    filter:      { $ref: "#/CampaignFilter" }
+    channel:     { $ref: "#/CampaignChannel" }
+    subject:     { type: string, description: Required for email. }
+    message:     { type: string, maxLength: 4000 }
+    scheduledAt: { type: string, format: date-time, nullable: true }
+
+Campaign:
+  type: object
+  required: [id, payload, status, estimatedCount, createdAt]
+  properties:
+    id:             { type: string, format: uuid }
+    payload:        { $ref: "#/CampaignPayload" }
+    status:         { $ref: "#/CampaignStatus" }
+    estimatedCount: { type: integer }
+    sentCount:      { type: integer }
+    failedCount:    { type: integer }
+    scheduledAt:    { type: string, format: date-time, nullable: true }
+    sentAt:         { type: string, format: date-time, nullable: true }
+    createdByStaffId: { type: string, format: uuid }
+    createdAt:      { $ref: "#/Timestamp" }
+
+CampaignEstimateResponse:
+  type: object
+  required: [estimatedCount, channelCost]
+  properties:
+    estimatedCount: { type: integer }
+    channelCost:    { $ref: "#/Money", description: "For SMS — total cost in cents." }
+    smsCreditsRequired: { type: integer, nullable: true }
+    smsCreditsAvailable: { type: integer, nullable: true }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  13. REMINDERS (automated rule engine)
+# ─────────────────────────────────────────────────────────────────────────────
+
+ReminderChannel:
+  type: string
+  enum: [email, sms, push]
+
+ReminderEvent:
+  type: string
+  enum:
+    - booking_confirmed
+    - appointment_reminder
+    - appointment_followup
+    - booking_cancelled
+    - booking_rescheduled
+
+TimingDirection:
+  type: string
+  enum: [immediately, before, after]
+
+TimingUnit:
+  type: string
+  enum: [minutes, hours, days]
+
+ReminderTiming:
+  type: object
+  required: [direction, value, unit]
+  properties:
+    direction: { $ref: "#/TimingDirection" }
+    value:     { type: integer, minimum: 0 }
+    unit:      { $ref: "#/TimingUnit" }
+
+ReminderTemplate:
+  type: object
+  properties:
+    emailSubject: { type: string }
+    emailBody:    { type: string, maxLength: 8000 }
+    smsBody:      { type: string, maxLength: 1000 }
+    pushTitle:    { type: string, maxLength: 80 }
+    pushBody:     { type: string, maxLength: 240 }
+
+ReminderRule:
+  type: object
+  required: [id, event, timing, channels, enabled, template]
+  properties:
+    id:       { type: string, format: uuid }
+    event:    { $ref: "#/ReminderEvent" }
+    timing:   { $ref: "#/ReminderTiming" }
+    channels: { type: array, items: { $ref: "#/ReminderChannel" } }
+    enabled:  { type: boolean }
+    template: { $ref: "#/ReminderTemplate" }
+    updatedAt: { $ref: "#/Timestamp" }
+
+ReminderRuleCreateRequest:
+  type: object
+  required: [event, timing, channels, template]
+  properties:
+    event:    { $ref: "#/ReminderEvent" }
+    timing:   { $ref: "#/ReminderTiming" }
+    channels: { type: array, items: { $ref: "#/ReminderChannel" } }
+    enabled:  { type: boolean, default: true }
+    template: { $ref: "#/ReminderTemplate" }
+
+GlobalReminderSettings:
+  type: object
+  required: [masterEnabled]
+  properties:
+    masterEnabled:           { type: boolean }
+    smsCreditsRemaining:     { type: integer }
+    smsCreditsUsedThisMonth: { type: integer }
+    emailsUsedThisMonth:     { type: integer }
+    pushUsedThisMonth:       { type: integer }
+
+ReminderStats:
+  type: object
+  properties:
+    totalSentThisMonth: { type: integer }
+    emailDeliveryRate:  { type: number, format: float }
+    smsDeliveryRate:    { type: number, format: float }
+    openRate:           { type: number, format: float }
+    noShowRateBefore:   { type: number, format: float }
+    noShowRateAfter:    { type: number, format: float }
+
+ReminderTestRequest:
+  type: object
+  required: [recipient]
+  properties:
+    recipient:
+      type: object
+      properties:
+        email: { type: string, format: email, nullable: true }
+        phone: { type: string, nullable: true }
+        pushDeviceId: { type: string, format: uuid, nullable: true }
+    sampleVariables:
+      type: object
+      description: Override the {{template_variables}} for the test send.
+      additionalProperties: { type: string }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  14. DASHBOARD (aggregated read views)
+# ─────────────────────────────────────────────────────────────────────────────
+
+DashboardStats:
+  type: object
+  required: [bookingsToday, revenueToday, newClientsThisWeek, occupancyRate]
+  properties:
+    bookingsToday:        { type: integer }
+    bookingsTrendPercent: { type: number, format: float }
+    revenueToday:         { $ref: "#/Money" }
+    revenueTrendPercent:  { type: number, format: float }
+    newClientsThisWeek:   { type: integer }
+    occupancyRate:        { type: number, format: float,
+                            description: "0-100, calendar utilisation today." }
+    pendingReviewCount:   { type: integer }
+    smsCreditsRemaining:  { type: integer }
+
+DashboardChartPoint:
+  type: object
+  required: [date, bookings, revenueCents]
+  properties:
+    date:          { type: string, format: date }
+    bookings:      { type: integer }
+    revenueCents:  { type: integer }
+    loyaltyVisits: { type: integer }
+    noShows:       { type: integer }
+
+DashboardAlert:
+  type: object
+  required: [id, severity, title, description, time, read]
+  properties:
+    id:          { type: string, format: uuid }
+    severity:    { type: string, enum: [warning, info, error, success] }
+    title:       { type: string }
+    description: { type: string }
+    time:        { $ref: "#/Timestamp" }
+    actionLabel: { type: string, nullable: true }
+    actionHref:  { type: string, nullable: true }
+    read:        { type: boolean }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  15. PAYMENTS (Stripe Connect for the shops)
+# ─────────────────────────────────────────────────────────────────────────────
+
+StripeConnectStatus:
+  type: object
+  required: [status]
+  properties:
+    status:           { type: string, enum: [not_started, pending, restricted, active, rejected] }
+    accountId:        { type: string, nullable: true }
+    chargesEnabled:   { type: boolean }
+    payoutsEnabled:   { type: boolean }
+    requirementsDue:  { type: array, items: { type: string } }
+
+StripeConnectOnboardResponse:
+  type: object
+  required: [url]
+  properties:
+    url: { type: string, format: uri,
+           description: Hosted Stripe onboarding link — redirect the user here. }
+    expiresAt: { $ref: "#/Timestamp" }
+
+PaymentIntentStatus:
+  type: string
+  enum:
+    - requires_payment_method
+    - requires_confirmation
+    - requires_action
+    - processing
+    - requires_capture
+    - canceled
+    - succeeded
+
+PaymentIntent:
+  type: object
+  required: [id, amount, status, createdAt]
+  properties:
+    id:              { type: string, description: Stripe PaymentIntent ID (`pi_…`). }
+    bookingId:       { type: string, format: uuid, nullable: true }
+    clientId:        { type: string, format: uuid, nullable: true }
+    amount:          { $ref: "#/Money" }
+    captureMethod:   { type: string, enum: [automatic, manual] }
+    status:          { $ref: "#/PaymentIntentStatus" }
+    clientSecret:    { type: string, description: For confirming with Stripe.js. }
+    createdAt:       { $ref: "#/Timestamp" }
+
+PaymentIntentCreateRequest:
+  type: object
+  required: [amount, purpose]
+  properties:
+    amount:        { $ref: "#/Money" }
+    purpose:       { type: string, enum: [deposit, full_payment, no_show_fee, cancellation_fee, gift_card] }
+    bookingId:     { type: string, format: uuid, nullable: true }
+    clientId:      { type: string, format: uuid, nullable: true }
+    captureMethod: { type: string, enum: [automatic, manual], default: automatic }
+    description:   { type: string }
+    metadata:
+      type: object
+      additionalProperties: { type: string }
+
+Charge:
+  type: object
+  required: [id, amount, status, createdAt]
+  properties:
+    id:              { type: string }
+    intentId:        { type: string }
+    bookingId:       { type: string, format: uuid, nullable: true }
+    clientId:        { type: string, format: uuid, nullable: true }
+    amount:          { $ref: "#/Money" }
+    refundedAmount:  { $ref: "#/Money" }
+    status:          { type: string, enum: [succeeded, refunded, partially_refunded, failed, disputed] }
+    receiptUrl:      { type: string, format: uri, nullable: true }
+    last4:           { type: string, nullable: true }
+    brand:           { type: string, nullable: true, example: "visa" }
+    createdAt:       { $ref: "#/Timestamp" }
+
+RefundRequest:
+  type: object
+  properties:
+    amount: { $ref: "#/Money",
+              description: When omitted, refunds the full remaining amount. }
+    reason: { type: string, enum: [duplicate, fraudulent, requested_by_customer, no_show_waived] }
+    note:   { type: string }
+
+Payout:
+  type: object
+  required: [id, amount, status, arrivalDate]
+  properties:
+    id:           { type: string }
+    amount:       { $ref: "#/Money" }
+    status:       { type: string, enum: [pending, in_transit, paid, failed, canceled] }
+    arrivalDate:  { type: string, format: date }
+    method:       { type: string, enum: [standard, instant] }
+
+GiftCard:
+  type: object
+  required: [id, code, value, balance, status, createdAt]
+  properties:
+    id:        { type: string, format: uuid }
+    code:      { type: string, description: 12-char alphanumeric. }
+    value:     { $ref: "#/Money" }
+    balance:   { $ref: "#/Money" }
+    status:    { type: string, enum: [active, redeemed, expired, revoked] }
+    expiresAt: { type: string, format: date, nullable: true }
+    purchasedByClientId: { type: string, format: uuid, nullable: true }
+    recipientName:  { type: string, nullable: true }
+    recipientEmail: { type: string, format: email, nullable: true }
+    createdAt: { $ref: "#/Timestamp" }
+
+GiftCardCreateRequest:
+  type: object
+  required: [value]
+  properties:
+    value:           { $ref: "#/Money" }
+    expiresAt:       { type: string, format: date, nullable: true }
+    purchasedByClientId: { type: string, format: uuid, nullable: true }
+    recipientName:   { type: string }
+    recipientEmail:  { type: string, format: email }
+    deliverMessage:  { type: string }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  16. BILLING (subscription for the SHOP itself — meta-billing)
+# ─────────────────────────────────────────────────────────────────────────────
+
+SubscriptionPlan:
+  type: string
+  enum: [trial, monthly, annual, enterprise]
+
+SubscriptionStatus:
+  type: string
+  enum: [trialing, active, past_due, paused, canceled, incomplete]
+
+Subscription:
+  type: object
+  required: [plan, status, staffCount, ratePerStaffCents, currentPeriodEnd]
+  properties:
+    plan:                { $ref: "#/SubscriptionPlan" }
+    status:              { $ref: "#/SubscriptionStatus" }
+    staffCount:          { type: integer }
+    ratePerStaffCents:   { type: integer }
+    monthlyTotalCents:   { type: integer }
+    currentPeriodStart:  { $ref: "#/Timestamp" }
+    currentPeriodEnd:    { $ref: "#/Timestamp" }
+    trialEndsAt:         { type: string, format: date-time, nullable: true }
+    cancelAtPeriodEnd:   { type: boolean }
+    stripeSubscriptionId: { type: string, nullable: true }
+
+SubscriptionUpdateRequest:
+  type: object
+  properties:
+    plan:           { $ref: "#/SubscriptionPlan" }
+    paymentMethodId: { type: string, description: Stripe PaymentMethod ID. }
+
+SmsCreditsBalance:
+  type: object
+  required: [remaining, usedThisMonth]
+  properties:
+    remaining:        { type: integer }
+    usedThisMonth:    { type: integer }
+    lastPurchaseAt:   { type: string, format: date-time, nullable: true }
+
+SmsBundle:
+  type: object
+  required: [id, smsCount, priceCents, pricePerSmsCents]
+  properties:
+    id:                { type: string, enum: [bundle_500, bundle_1000, bundle_2500, bundle_5000, bundle_10000] }
+    smsCount:          { type: integer }
+    priceCents:        { type: integer }
+    pricePerSmsCents:  { type: number, format: float }
+
+SmsPurchaseRequest:
+  type: object
+  required: [bundleId]
+  properties:
+    bundleId: { type: string }
+    paymentMethodId: { type: string }
+
+Invoice:
+  type: object
+  required: [id, number, amount, status, issuedAt]
+  properties:
+    id:         { type: string, format: uuid }
+    number:     { type: string, example: "INV-2026-0042" }
+    amount:     { $ref: "#/Money" }
+    tax:        { $ref: "#/Money" }
+    status:     { type: string, enum: [draft, open, paid, void, uncollectible] }
+    issuedAt:   { $ref: "#/Timestamp" }
+    paidAt:     { type: string, format: date-time, nullable: true }
+    pdfUrl:     { type: string, format: uri }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  17. NOTIFICATIONS (in-app bell + push)
+# ─────────────────────────────────────────────────────────────────────────────
+
+NotificationType:
+  type: string
+  enum:
+    - new_booking
+    - booking_cancelled
+    - booking_rescheduled
+    - low_sms_credits
+    - payment_received
+    - payout_arrived
+    - staff_invitation_accepted
+    - subscription_renewal
+    - system
+
+Notification:
+  type: object
+  required: [id, type, title, body, read, createdAt]
+  properties:
+    id:        { type: string, format: uuid }
+    type:      { $ref: "#/NotificationType" }
+    title:     { type: string }
+    body:      { type: string }
+    href:      { type: string, nullable: true,
+                 description: Deep-link the bell item navigates to in the app. }
+    read:      { type: boolean }
+    createdAt: { $ref: "#/Timestamp" }
+
+PushDevicePlatform:
+  type: string
+  enum: [ios, android, web]
+
+PushDevice:
+  type: object
+  required: [id, token, platform, createdAt]
+  properties:
+    id:        { type: string, format: uuid }
+    token:     { type: string, description: APNs / FCM / Web Push token. }
+    platform:  { $ref: "#/PushDevicePlatform" }
+    appVersion: { type: string }
+    lastSeenAt: { $ref: "#/Timestamp" }
+    createdAt: { $ref: "#/Timestamp" }
+
+PushDeviceRegisterRequest:
+  type: object
+  required: [token, platform]
+  properties:
+    token:      { type: string }
+    platform:   { $ref: "#/PushDevicePlatform" }
+    appVersion: { type: string }
+
+NotificationPreferences:
+  type: object
+  description: Per-channel toggles for the LOGGED-IN STAFF user.
+  properties:
+    inApp:
+      type: object
+      additionalProperties: { type: boolean }
+    email:
+      type: object
+      additionalProperties: { type: boolean }
+    push:
+      type: object
+      additionalProperties: { type: boolean }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  18. UPLOADS
+# ─────────────────────────────────────────────────────────────────────────────
+
+UploadPresignRequest:
+  type: object
+  required: [purpose, filename, contentType, sizeBytes]
+  properties:
+    purpose:
+      type: string
+      enum: [staff_avatar, service_image, package_image, store_logo, client_attachment]
+    filename:    { type: string }
+    contentType:
+      type: string
+      enum: [image/jpeg, image/png, image/webp, image/heic]
+    sizeBytes:
+      type: integer
+      maximum: 10485760
+      description: Max 10 MB.
+
+UploadPresignResponse:
+  type: object
+  required: [uploadId, uploadUrl, fields, key]
+  properties:
+    uploadId:   { type: string, format: uuid }
+    uploadUrl:  { type: string, format: uri,
+                  description: Direct-PUT URL (S3) or POST URL (multipart). }
+    fields:
+      type: object
+      additionalProperties: { type: string }
+      description: Form fields to include in the upload (S3 POST policy).
+    key:        { type: string }
+    expiresAt:  { $ref: "#/Timestamp" }
+
+UploadConfirmResponse:
+  type: object
+  required: [key, url]
+  properties:
+    key:    { type: string }
+    url:    { type: string, format: uri }
+    width:  { type: integer, nullable: true }
+    height: { type: integer, nullable: true }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  19. PUBLIC BOOKING WIDGET (no auth)
+# ─────────────────────────────────────────────────────────────────────────────
+
+PublicShop:
+  type: object
+  required: [slug, shopName, businessType, address, timezone]
+  properties:
+    slug:         { type: string }
+    shopName:     { type: string }
+    businessType: { $ref: "#/BusinessType" }
+    description:  { type: string, nullable: true }
+    logo:         { $ref: "#/ImageRef", nullable: true }
+    address:      { $ref: "#/StoreAddress" }
+    phone:        { type: string }
+    email:        { type: string, format: email }
+    timezone:     { type: string }
+    instagram:    { type: string, nullable: true }
+    facebook:     { type: string, nullable: true }
+    bookingPolicy: { type: string, nullable: true }
+    cancellationPolicy: { type: string, nullable: true }
+
+PublicService:
+  type: object
+  required: [id, name, durationMinutes, price]
+  properties:
+    id:              { type: string, format: uuid }
+    name:            { type: string }
+    description:     { type: string }
+    category:        { $ref: "#/ServiceCategory" }
+    image:           { $ref: "#/ImageRef", nullable: true }
+    durationMinutes: { type: integer }
+    price:           { $ref: "#/Money" }
+    depositRequired: { type: boolean }
+    depositAmount:   { $ref: "#/Money", nullable: true }
+
+PublicStaff:
+  type: object
+  required: [id, firstName, lastName]
+  properties:
+    id:             { type: string, format: uuid }
+    firstName:      { type: string }
+    lastName:       { type: string }
+    bio:            { type: string }
+    specialization: { type: string }
+    avatarImage:    { $ref: "#/ImageRef", nullable: true }
+    avatarColor:    { $ref: "#/Color" }
+    services:       { type: array, items: { type: string, format: uuid } }
+
+PublicBookingCreateRequest:
+  type: object
+  required: [staffId, startAt, client]
+  properties:
+    staffId:   { type: string, format: uuid }
+    serviceId: { type: string, format: uuid, nullable: true }
+    packageId: { type: string, format: uuid, nullable: true }
+    startAt:   { $ref: "#/Timestamp" }
+    client:
+      type: object
+      required: [firstName, lastName, email, phone]
+      properties:
+        firstName: { type: string }
+        lastName:  { type: string }
+        email:     { type: string, format: email }
+        phone:     { type: string }
+        marketingOptIn: { type: boolean, default: false }
+    notes:     { type: string }
+    captchaToken: { type: string, description: hCaptcha / reCAPTCHA token. }
+
+PublicBookingResponse:
+  type: object
+  required: [bookingId, token, status, requiresPayment]
+  properties:
+    bookingId:       { type: string, format: uuid }
+    token:           { type: string,
+                       description: Opaque token for the public client to manage this booking. }
+    status:          { $ref: "#/BookingStatus" }
+    requiresPayment: { type: boolean }
+    paymentIntent:   { $ref: "#/PaymentIntent", nullable: true,
+                       description: Returned when deposit / full payment is required. }
+    manageUrl:       { type: string, format: uri }
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  20. WEBHOOKS — payload contracts for outgoing events.
+# ─────────────────────────────────────────────────────────────────────────────
+
+WebhookEnvelope:
+  type: object
+  required: [id, event, createdAt, data]
+  properties:
+    id:        { type: string, format: uuid }
+    event:     { type: string,
+                 description: Dot-notation event name, e.g. `booking.created`. }
+    createdAt: { $ref: "#/Timestamp" }
+    livemode:  { type: boolean }
+    data:
+      type: object
+      description: Event-specific payload. See `docs/07-notifications.md`.
+      additionalProperties: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  21. RETAIL — products a shop stocks for sale, and POS checkout of them.
+#      Added post-v1: shops that also sell product (not just services) need a
+#      basic catalogue + a way to ring up a sale, either paid online (same
+#      Stripe Connect rail as Bookings) or in person (validated against the
+#      shop's own StoreSettings.inStoreMethods allow-list — see PaymentChannel).
+# ─────────────────────────────────────────────────────────────────────────────
+
+PaymentChannel:
+  type: string
+  enum: [online, in_store]
+
+SaleStatus:
+  type: string
+  enum: [pending, paid, refunded, voided]
+
+Product:
+  type: object
+  required: [id, name, price, trackInventory, stockQuantity, active, createdAt]
+  properties:
+    id:                { type: string, format: uuid }
+    name:              { type: string }
+    sku:               { type: string, nullable: true }
+    description:       { type: string, nullable: true }
+    category:          { type: string, nullable: true }
+    price:             { $ref: "#/Money" }
+    cost:              { $ref: "#/Money", nullable: true }
+    trackInventory:    { type: boolean }
+    stockQuantity:     { type: integer }
+    lowStockThreshold: { type: integer }
+    active:            { type: boolean }
+    createdAt:         { $ref: "#/Timestamp" }
+    updatedAt:         { $ref: "#/Timestamp" }
+    version:           { type: integer }
+
+ProductWriteRequest:
+  type: object
+  required: [name, price]
+  description: Used for both create (POST, all required fields enforced) and update (PATCH, null = unchanged).
+  properties:
+    name:              { type: string }
+    sku:               { type: string, nullable: true }
+    description:       { type: string, nullable: true }
+    category:          { type: string, nullable: true }
+    price:             { $ref: "#/Money" }
+    cost:              { $ref: "#/Money", nullable: true }
+    trackInventory:    { type: boolean }
+    stockQuantity:     { type: integer, minimum: 0 }
+    lowStockThreshold: { type: integer, minimum: 0 }
+    active:            { type: boolean }
+
+StockAdjustRequest:
+  type: object
+  required: [delta]
+  properties:
+    delta:  { type: integer, description: "Positive to restock, negative for shrinkage/breakage." }
+    reason: { type: string, nullable: true }
+
+SaleLineItem:
+  type: object
+  required: [productId, name, unitPrice, quantity, lineTotal]
+  properties:
+    productId: { type: string, format: uuid }
+    name:      { type: string, description: Snapshotted at sale time. }
+    unitPrice: { $ref: "#/Money" }
+    quantity:  { type: integer, minimum: 1 }
+    lineTotal: { $ref: "#/Money" }
+
+Sale:
+  type: object
+  required: [id, lineItems, subtotal, total, paymentChannel, status, soldAt, createdAt]
+  properties:
+    id:                { type: string, format: uuid }
+    clientId:          { type: string, format: uuid, nullable: true }
+    clientName:        { type: string, nullable: true }
+    staffId:           { type: string, format: uuid, nullable: true }
+    bookingId:         { type: string, format: uuid, nullable: true,
+                         description: Set when items were rung up alongside a completed appointment. }
+    lineItems:
+      type: array
+      items: { $ref: "#/SaleLineItem" }
+    subtotal:          { $ref: "#/Money" }
+    total:             { $ref: "#/Money" }
+    paymentChannel:    { $ref: "#/PaymentChannel" }
+    inStoreMethod:     { $ref: "#/InStoreMethod", nullable: true }
+    paymentIntentId:   { type: string, nullable: true }
+    status:            { $ref: "#/SaleStatus" }
+    soldAt:            { $ref: "#/Timestamp" }
+    voidReason:        { type: string, nullable: true }
+    createdAt:         { $ref: "#/Timestamp" }
+    version:           { type: integer }
+
+SaleItemRequest:
+  type: object
+  required: [productId, quantity]
+  properties:
+    productId: { type: string, format: uuid }
+    quantity:  { type: integer, minimum: 1 }
+
+SaleCreateRequest:
+  type: object
+  required: [items, paymentChannel]
+  properties:
+    clientId:       { type: string, format: uuid, nullable: true }
+    bookingId:      { type: string, format: uuid, nullable: true }
+    items:
+      type: array
+      minItems: 1
+      items: { $ref: "#/SaleItemRequest" }
+    paymentChannel: { $ref: "#/PaymentChannel" }
+    inStoreMethod:  { $ref: "#/InStoreMethod", nullable: true,
+                      description: Required when paymentChannel=in_store; must be one of the shop's allowed methods. }
+
+SaleCreateResponse:
+  type: object
+  required: [sale]
+  properties:
+    sale:          { $ref: "#/Sale" }
+    paymentIntent: { $ref: "#/PaymentIntent", nullable: true }
+
+SaleVoidRequest:
+  type: object
+  properties:
+    reason: { type: string, nullable: true }

@@ -1,0 +1,169 @@
+# =============================================================================
+#  Auth endpoints — signup, login, refresh, password reset, email verification.
+#
+#  None require an Authorization header — they MINT the token.
+#  Override the global `security` with [] to mark them open.
+# =============================================================================
+
+signup:
+  post:
+    tags: [Auth]
+    summary: Create a new shop owner / barber account.
+    description: |
+      Creates a new `User` AND a tenant `StoreProfile` in one transaction.
+      Sends an email verification link. Returns the auth pair so the client
+      can start the onboarding flow immediately without re-logging in.
+
+      Idempotent on `email` — second call with same email returns 409.
+    operationId: signup
+    security: []
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/SignupRequest" }
+    responses:
+      "201":
+        description: Account created and signed in.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/AuthSession" }
+      "400": { $ref: "../components/responses.yaml#/BadRequest" }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+      "429": { $ref: "../components/responses.yaml#/TooManyRequests" }
+
+login:
+  post:
+    tags: [Auth]
+    summary: Exchange email + password for a token pair.
+    operationId: login
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/LoginRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/AuthSession" }
+      "401":
+        description: Bad credentials, unverified email, or locked account.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Error" }
+      "429": { $ref: "../components/responses.yaml#/TooManyRequests" }
+
+logout:
+  post:
+    tags: [Auth]
+    summary: Revoke the current session (server-side).
+    description: |
+      Adds the JWT's `jti` to the revocation set. Subsequent requests with
+      the same token are 401-ed. Idempotent.
+    operationId: logout
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+      "401": { $ref: "../components/responses.yaml#/Unauthorized" }
+
+refresh:
+  post:
+    tags: [Auth]
+    summary: Exchange a refresh token for a fresh access + refresh pair.
+    description: |
+      Refresh tokens rotate — the old refresh token is single-use. Re-using
+      a refresh token is treated as a compromise and invalidates the chain.
+    operationId: refresh
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [refreshToken]
+            properties:
+              refreshToken: { type: string }
+    responses:
+      "200":
+        description: New token pair.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/AuthTokens" }
+      "401":
+        description: Refresh token invalid, expired, or already used.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Error" }
+
+forgotPassword:
+  post:
+    tags: [Auth]
+    summary: Send a password-reset email.
+    description: |
+      Always returns 204 — the API never reveals whether the email exists,
+      to prevent account enumeration.
+    operationId: forgotPassword
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ForgotPasswordRequest" }
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+      "429": { $ref: "../components/responses.yaml#/TooManyRequests" }
+
+resetPassword:
+  post:
+    tags: [Auth]
+    summary: Set a new password using a token from the email link.
+    operationId: resetPassword
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ResetPasswordRequest" }
+    responses:
+      "200":
+        description: Password updated. Issues a new token pair so the user is logged in.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/AuthSession" }
+      "401": { $ref: "../components/responses.yaml#/Unauthorized" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+
+verifyEmail:
+  post:
+    tags: [Auth]
+    summary: Verify an email address using the token sent on signup.
+    operationId: verifyEmail
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/VerifyEmailRequest" }
+    responses:
+      "200":
+        description: Verified.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/User" }
+      "401": { $ref: "../components/responses.yaml#/Unauthorized" }
+
+resendVerification:
+  post:
+    tags: [Auth]
+    summary: Resend the verification email to the current user.
+    operationId: resendVerification
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+      "401": { $ref: "../components/responses.yaml#/Unauthorized" }
+      "429": { $ref: "../components/responses.yaml#/TooManyRequests" }

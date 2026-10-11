@@ -1,0 +1,187 @@
+# =============================================================================
+#  Packages — bundles of ≥ 2 services with optional discount.
+#  Base price + duration are derived server-side, never trusted from the client.
+# =============================================================================
+
+collection:
+  get:
+    tags: [Packages]
+    summary: List packages.
+    operationId: listPackages
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - name: status
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/PackageStatus" }
+      - name: staffId
+        in: query
+        schema: { type: string, format: uuid }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/Package" }
+  post:
+    tags: [Packages]
+    summary: Create a package.
+    operationId: createPackage
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/PackageCreateRequest" }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Package" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+
+item:
+  parameters:
+    - $ref: "../components/parameters.yaml#/packageId"
+  get:
+    tags: [Packages]
+    summary: Get a package.
+    operationId: getPackage
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Package" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+  patch:
+    tags: [Packages]
+    summary: Update a package.
+    operationId: updatePackage
+    parameters:
+      - $ref: "../components/parameters.yaml#/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/PackageUpdateRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Package" }
+  delete:
+    tags: [Packages]
+    summary: Soft-delete a package.
+    operationId: deletePackage
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+image:
+  parameters:
+    - $ref: "../components/parameters.yaml#/packageId"
+  put:
+    tags: [Packages]
+    summary: Set the package cover image.
+    operationId: setPackageImage
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [uploadId]
+            properties:
+              uploadId: { type: string, format: uuid }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Package" }
+  delete:
+    tags: [Packages]
+    summary: Remove the package cover image.
+    operationId: deletePackageImage
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+archive:
+  parameters:
+    - $ref: "../components/parameters.yaml#/packageId"
+  post:
+    tags: [Packages]
+    summary: Archive a package — hides from booking but keeps historical refs.
+    operationId: archivePackage
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Package" }
+
+duplicate:
+  parameters:
+    - $ref: "../components/parameters.yaml#/packageId"
+  post:
+    tags: [Packages]
+    summary: Duplicate a package as a new draft.
+    operationId: duplicatePackage
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Package" }
+
+previewPrice:
+  parameters:
+    - $ref: "../components/parameters.yaml#/packageId"
+  get:
+    tags: [Packages]
+    summary: Preview the discounted price + duration for given services.
+    description: |
+      Used by the admin form while the owner experiments with discount values
+      before saving. The body never has to be persisted.
+    operationId: previewPackagePrice
+    parameters:
+      - name: serviceIds
+        in: query
+        required: true
+        schema:
+          type: array
+          items: { type: string, format: uuid }
+        style: form
+        explode: true
+      - name: discountType
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/DiscountType" }
+      - name: discountValue
+        in: query
+        schema: { type: number }
+      - name: customDurationMinutes
+        in: query
+        schema: { type: integer }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [basePrice, discountedPrice, effectiveDurationMinutes]
+              properties:
+                basePrice: { $ref: "../components/schemas.yaml#/Money" }
+                discountedPrice: { $ref: "../components/schemas.yaml#/Money" }
+                discountAmount: { $ref: "../components/schemas.yaml#/Money" }
+                effectiveDurationMinutes: { type: integer }

@@ -1,0 +1,261 @@
+# =============================================================================
+#  Loyalty — sequential reward programs + per-client progress.
+#
+#  Clients always work toward the lowest-sequenceOrder active program they
+#  have not yet earned. Earning is automatic on booking completion; the
+#  worker job that processes `booking.completed` evaluates each client's
+#  current program and emits a `LoyaltyReward` when the trigger is met.
+# =============================================================================
+
+programs:
+  get:
+    tags: [Loyalty]
+    summary: List loyalty programs (in sequence order).
+    operationId: listLoyaltyPrograms
+    parameters:
+      - name: status
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/ProgramStatus" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/LoyaltyProgram" }
+  post:
+    tags: [Loyalty]
+    summary: Create a loyalty program.
+    operationId: createLoyaltyProgram
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/LoyaltyProgramCreateRequest" }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/LoyaltyProgram" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+
+program:
+  parameters:
+    - $ref: "../components/parameters.yaml#/programId"
+  get:
+    tags: [Loyalty]
+    summary: Get a loyalty program.
+    operationId: getLoyaltyProgram
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/LoyaltyProgram" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+  patch:
+    tags: [Loyalty]
+    summary: Update a loyalty program.
+    description: |
+      Editing reward or trigger after issuance only affects clients who have
+      not yet earned the reward — those already earned keep the original terms.
+    operationId: updateLoyaltyProgram
+    parameters:
+      - $ref: "../components/parameters.yaml#/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/LoyaltyProgramCreateRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/LoyaltyProgram" }
+  delete:
+    tags: [Loyalty]
+    summary: Soft-delete a loyalty program.
+    operationId: deleteLoyaltyProgram
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+      "409":
+        description: Cannot delete — clients have pending rewards under this program.
+
+activate:
+  parameters:
+    - $ref: "../components/parameters.yaml#/programId"
+  post:
+    tags: [Loyalty]
+    summary: Activate a draft / paused program.
+    operationId: activateLoyaltyProgram
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/LoyaltyProgram" }
+
+pause:
+  parameters:
+    - $ref: "../components/parameters.yaml#/programId"
+  post:
+    tags: [Loyalty]
+    summary: Pause a program — existing rewards remain redeemable.
+    operationId: pauseLoyaltyProgram
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/LoyaltyProgram" }
+
+duplicate:
+  parameters:
+    - $ref: "../components/parameters.yaml#/programId"
+  post:
+    tags: [Loyalty]
+    summary: Duplicate a program as a new draft.
+    operationId: duplicateLoyaltyProgram
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/LoyaltyProgram" }
+
+reorder:
+  post:
+    tags: [Loyalty]
+    summary: Reorder loyalty programs in the ladder.
+    operationId: reorderLoyaltyPrograms
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ProgramReorderRequest" }
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+clientProgress:
+  parameters:
+    - $ref: "../components/parameters.yaml#/clientId"
+  get:
+    tags: [Loyalty]
+    summary: Get a client's loyalty progress and earned history.
+    operationId: getLoyaltyClientProgress
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/ClientLoyaltyProgress" }
+
+rewards:
+  get:
+    tags: [Loyalty]
+    summary: List earned rewards (across all clients).
+    operationId: listLoyaltyRewards
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - name: clientId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: programId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: status
+        in: query
+        schema: { type: string, enum: [pending, redeemed, expired, revoked] }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/LoyaltyReward" }
+
+redeem:
+  parameters:
+    - $ref: "../components/parameters.yaml#/rewardId"
+  post:
+    tags: [Loyalty]
+    summary: Redeem a pending reward (typically at the next checkout).
+    operationId: redeemLoyaltyReward
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              bookingId: { type: string, format: uuid, nullable: true,
+                           description: Link the redemption to a specific booking. }
+              note:      { type: string }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/LoyaltyReward" }
+      "409":
+        description: Already redeemed / expired / revoked.
+
+revoke:
+  parameters:
+    - $ref: "../components/parameters.yaml#/rewardId"
+  post:
+    tags: [Loyalty]
+    summary: Revoke a pending reward (e.g. issued in error).
+    operationId: revokeLoyaltyReward
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              reason: { type: string }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/LoyaltyReward" }
+
+stats:
+  get:
+    tags: [Loyalty]
+    summary: Aggregate loyalty stats — earned vs redeemed, redemption rate.
+    operationId: getLoyaltyStats
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                totalEarned:    { type: integer }
+                totalRedeemed:  { type: integer }
+                redemptionRatePercent: { type: number, format: float }
+                topProgram:
+                  type: object
+                  nullable: true
+                  properties:
+                    programId: { type: string, format: uuid }
+                    name:      { type: string }
+                    count:     { type: integer }

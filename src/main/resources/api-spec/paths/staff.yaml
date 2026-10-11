@@ -1,0 +1,263 @@
+# =============================================================================
+#  Staff — members of the shop (owner / manager / staff).
+#  Permission rules:
+#    - owner   : full CRUD
+#    - manager : create/update/deactivate; cannot change pay or remove owner
+#    - staff   : read-only on own record; list returns only self
+# =============================================================================
+
+collection:
+  get:
+    tags: [Staff]
+    summary: List staff members.
+    operationId: listStaff
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - $ref: "../components/parameters.yaml#/sort"
+      - name: status
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/StaffStatus" }
+      - name: role
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/StaffRole" }
+      - name: q
+        in: query
+        description: Full-text search across firstName, lastName, email.
+        schema: { type: string }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/StaffMember" }
+      "401": { $ref: "../components/responses.yaml#/Unauthorized" }
+  post:
+    tags: [Staff]
+    summary: Create a new staff member.
+    description: |
+      Requires `staff.write` permission (owner or manager).
+      If `sendInvite` is true, emails an invitation link.
+    operationId: createStaff
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/StaffCreateRequest" }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StaffMember" }
+      "401": { $ref: "../components/responses.yaml#/Unauthorized" }
+      "403": { $ref: "../components/responses.yaml#/Forbidden" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+
+item:
+  parameters:
+    - $ref: "../components/parameters.yaml#/staffId"
+  get:
+    tags: [Staff]
+    summary: Get a single staff member.
+    operationId: getStaff
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StaffMember" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+  patch:
+    tags: [Staff]
+    summary: Update a staff member.
+    operationId: updateStaff
+    parameters:
+      - $ref: "../components/parameters.yaml#/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/StaffUpdateRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StaffMember" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }
+      "412": { $ref: "../components/responses.yaml#/PreconditionFailed" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+  delete:
+    tags: [Staff]
+    summary: Soft-delete a staff member.
+    description: |
+      Sets `deletedAt`. Historical bookings keep their staff reference.
+      Future bookings assigned to this staff member are cancelled.
+    operationId: deleteStaff
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+
+services:
+  parameters:
+    - $ref: "../components/parameters.yaml#/staffId"
+  put:
+    tags: [Staff]
+    summary: Replace the set of services this staff member can perform.
+    operationId: setStaffServices
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [serviceIds]
+            properties:
+              serviceIds:
+                type: array
+                items: { type: string, format: uuid }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StaffMember" }
+
+avatar:
+  parameters:
+    - $ref: "../components/parameters.yaml#/staffId"
+  put:
+    tags: [Staff]
+    summary: Set the staff member's avatar (via upload).
+    operationId: setStaffAvatar
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [uploadId]
+            properties:
+              uploadId: { type: string, format: uuid }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StaffMember" }
+  delete:
+    tags: [Staff]
+    summary: Remove the staff member's avatar.
+    operationId: deleteStaffAvatar
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+deactivate:
+  parameters:
+    - $ref: "../components/parameters.yaml#/staffId"
+  post:
+    tags: [Staff]
+    summary: Mark a staff member as inactive (cannot log in, hidden from bookings).
+    operationId: deactivateStaff
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StaffMember" }
+
+reactivate:
+  parameters:
+    - $ref: "../components/parameters.yaml#/staffId"
+  post:
+    tags: [Staff]
+    summary: Restore an inactive staff member.
+    operationId: reactivateStaff
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StaffMember" }
+
+invitations:
+  get:
+    tags: [Staff]
+    summary: List outstanding staff invitations.
+    operationId: listInvitations
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/StaffInvitation" }
+  post:
+    tags: [Staff]
+    summary: Send a new staff invitation.
+    operationId: createInvitation
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [email, role]
+            properties:
+              email: { type: string, format: email }
+              role:  { $ref: "../components/schemas.yaml#/StaffRole" }
+              staffId:
+                type: string
+                format: uuid
+                nullable: true
+                description: Link the invite to an existing staff record.
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StaffInvitation" }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }
+
+invitation:
+  parameters:
+    - name: invitationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  delete:
+    tags: [Staff]
+    summary: Revoke an outstanding invitation.
+    operationId: revokeInvitation
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+invitationResend:
+  parameters:
+    - name: invitationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  post:
+    tags: [Staff]
+    summary: Resend the invitation email.
+    operationId: resendInvitation
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StaffInvitation" }
+      "429": { $ref: "../components/responses.yaml#/TooManyRequests" }

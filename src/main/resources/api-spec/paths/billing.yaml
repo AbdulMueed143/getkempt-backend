@@ -1,0 +1,215 @@
+# =============================================================================
+#  Billing — the SUBSCRIPTION the shop pays to GetKempt (meta-billing).
+#  Not to be confused with /payments which is the shop's customer-facing
+#  Stripe Connect.
+# =============================================================================
+
+subscription:
+  get:
+    tags: [Billing]
+    summary: Get the current subscription.
+    operationId: getSubscription
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Subscription" }
+  patch:
+    tags: [Billing]
+    summary: Change plan (monthly ↔ annual) or update payment method.
+    operationId: updateSubscription
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/SubscriptionUpdateRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Subscription" }
+
+subscriptionPreview:
+  post:
+    tags: [Billing]
+    summary: Preview the cost of a subscription change before committing.
+    description: Used by the pricing calculator on the landing page + settings.
+    operationId: previewSubscription
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [plan, staffCount]
+            properties:
+              plan:       { $ref: "../components/schemas.yaml#/SubscriptionPlan" }
+              staffCount: { type: integer, minimum: 1 }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ratePerStaffCents: { type: integer }
+                monthlyTotalCents: { type: integer }
+                annualTotalCents:  { type: integer, nullable: true }
+                effectiveAt: { type: string, format: date-time }
+                proration:   { $ref: "../components/schemas.yaml#/Money" }
+
+subscriptionCancel:
+  post:
+    tags: [Billing]
+    summary: Cancel the subscription at period end.
+    operationId: cancelSubscription
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              reason: { type: string }
+              cancelImmediately:
+                type: boolean
+                default: false
+                description: Owner override — terminate access right now.
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Subscription" }
+
+paymentMethod:
+  get:
+    tags: [Billing]
+    summary: Get the current subscription payment method.
+    operationId: getBillingPaymentMethod
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                brand: { type: string, nullable: true }
+                last4: { type: string, nullable: true }
+                expiryMonth: { type: integer, nullable: true }
+                expiryYear:  { type: integer, nullable: true }
+                addPaymentMethodUrl: { type: string, format: uri, nullable: true,
+                                       description: Stripe billing portal link when none configured. }
+  put:
+    tags: [Billing]
+    summary: Update the subscription payment method.
+    operationId: setBillingPaymentMethod
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [paymentMethodId]
+            properties:
+              paymentMethodId: { type: string }
+    responses:
+      "200": { description: OK }
+
+smsCredits:
+  get:
+    tags: [Billing]
+    summary: Get the SMS credits balance.
+    operationId: getSmsCreditsBalance
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/SmsCreditsBalance" }
+
+smsPurchase:
+  post:
+    tags: [Billing]
+    summary: Purchase an SMS credit bundle.
+    operationId: purchaseSmsBundle
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/SmsPurchaseRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                balance:       { $ref: "../components/schemas.yaml#/SmsCreditsBalance" }
+                invoice:       { $ref: "../components/schemas.yaml#/Invoice" }
+                paymentIntent: { $ref: "../components/schemas.yaml#/PaymentIntent" }
+
+invoices:
+  get:
+    tags: [Billing]
+    summary: List invoices issued to the shop.
+    operationId: listInvoices
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - name: status
+        in: query
+        schema: { type: string, enum: [draft, open, paid, void, uncollectible] }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/Invoice" }
+
+invoice:
+  parameters:
+    - name: invoiceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  get:
+    tags: [Billing]
+    summary: Get an invoice.
+    operationId: getInvoice
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Invoice" }
+
+invoicePdf:
+  parameters:
+    - name: invoiceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  get:
+    tags: [Billing]
+    summary: Get a presigned URL for the invoice PDF.
+    operationId: getInvoicePdf
+    responses:
+      "302":
+        description: Redirect to the signed PDF URL.
+        headers:
+          Location: { schema: { type: string, format: uri } }

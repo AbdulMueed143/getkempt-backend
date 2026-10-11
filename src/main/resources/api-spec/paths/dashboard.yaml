@@ -1,0 +1,92 @@
+# =============================================================================
+#  Dashboard — read-only aggregations powering the home page.
+#  All are cacheable (short TTL — 30-60s).
+# =============================================================================
+
+stats:
+  get:
+    tags: [Dashboard]
+    summary: Headline stats (today's bookings, revenue, etc.).
+    operationId: getDashboardStats
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/DashboardStats" }
+
+chart:
+  get:
+    tags: [Dashboard]
+    summary: Time-series data for the dashboard chart.
+    operationId: getDashboardChart
+    parameters:
+      - name: range
+        in: query
+        required: true
+        schema:
+          type: string
+          enum: [last_7d, last_30d, last_90d, ytd]
+      - name: metrics
+        in: query
+        description: Subset of metrics to compute (default = all).
+        schema:
+          type: array
+          items: { type: string, enum: [bookings, revenue, loyalty_visits, no_shows] }
+        style: form
+        explode: true
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/DashboardChartPoint" }
+
+upcomingBookings:
+  get:
+    tags: [Dashboard]
+    summary: Upcoming bookings list shown on the dashboard.
+    operationId: getUpcomingBookings
+    parameters:
+      - $ref: "../components/parameters.yaml#/limit"
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/Booking" }
+
+alerts:
+  get:
+    tags: [Dashboard]
+    summary: List actionable alerts (e.g. SMS credits low, payouts pending).
+    operationId: listDashboardAlerts
+    parameters:
+      - name: unreadOnly
+        in: query
+        schema: { type: boolean, default: false }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/DashboardAlert" }
+
+dismissAlert:
+  parameters:
+    - name: alertId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  post:
+    tags: [Dashboard]
+    summary: Dismiss / mark an alert as read.
+    operationId: dismissDashboardAlert
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }

@@ -1,0 +1,291 @@
+# =============================================================================
+#  Clients — customer records belonging to the shop.
+# =============================================================================
+
+collection:
+  get:
+    tags: [Clients]
+    summary: List clients.
+    operationId: listClients
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - $ref: "../components/parameters.yaml#/sort"
+      - name: q
+        in: query
+        description: Search across name, email, phone.
+        schema: { type: string }
+      - name: tag
+        in: query
+        schema: { type: string }
+      - name: preferredStaffId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: hasUpcoming
+        in: query
+        description: Filter to clients with a future booking.
+        schema: { type: boolean }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/Client" }
+  post:
+    tags: [Clients]
+    summary: Create a client.
+    operationId: createClient
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ClientCreateRequest" }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Client" }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }
+
+item:
+  parameters:
+    - $ref: "../components/parameters.yaml#/clientId"
+  get:
+    tags: [Clients]
+    summary: Get a client.
+    operationId: getClient
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Client" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+  patch:
+    tags: [Clients]
+    summary: Update a client.
+    operationId: updateClient
+    parameters:
+      - $ref: "../components/parameters.yaml#/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ClientUpdateRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Client" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+  delete:
+    tags: [Clients]
+    summary: Soft-delete a client.
+    operationId: deleteClient
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+bookings:
+  parameters:
+    - $ref: "../components/parameters.yaml#/clientId"
+  get:
+    tags: [Clients]
+    summary: List a client's booking history.
+    operationId: listClientBookings
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - name: status
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/BookingStatus" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/Booking" }
+
+notes:
+  parameters:
+    - $ref: "../components/parameters.yaml#/clientId"
+  get:
+    tags: [Clients]
+    summary: List notes attached to a client.
+    operationId: listClientNotes
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/ClientNote" }
+  post:
+    tags: [Clients]
+    summary: Add a note to a client.
+    operationId: createClientNote
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [body]
+            properties:
+              body:   { type: string, maxLength: 4000 }
+              pinned: { type: boolean, default: false }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/ClientNote" }
+
+note:
+  parameters:
+    - $ref: "../components/parameters.yaml#/clientId"
+    - name: noteId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  patch:
+    tags: [Clients]
+    summary: Edit a client note.
+    operationId: updateClientNote
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              body:   { type: string }
+              pinned: { type: boolean }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/ClientNote" }
+  delete:
+    tags: [Clients]
+    summary: Delete a client note.
+    operationId: deleteClientNote
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+loyalty:
+  parameters:
+    - $ref: "../components/parameters.yaml#/clientId"
+  get:
+    tags: [Clients]
+    summary: Get a client's loyalty progress and earned rewards.
+    operationId: getClientLoyalty
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                progress:
+                  $ref: "../components/schemas.yaml#/ClientLoyaltyProgress"
+                rewards:
+                  type: array
+                  items: { $ref: "../components/schemas.yaml#/LoyaltyReward" }
+
+merge:
+  parameters:
+    - $ref: "../components/parameters.yaml#/clientId"
+  post:
+    tags: [Clients]
+    summary: Merge a duplicate client record into this one.
+    description: |
+      Reassigns all bookings, notes and loyalty progress from the source
+      client to this client, then soft-deletes the source. Irreversible.
+    operationId: mergeClient
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ClientMergeRequest" }
+    responses:
+      "200":
+        description: Merged.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Client" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }
+
+search:
+  get:
+    tags: [Clients]
+    summary: Lightweight client search (used by the booking form autocomplete).
+    operationId: searchClients
+    parameters:
+      - name: q
+        in: query
+        required: true
+        schema: { type: string, minLength: 2 }
+      - $ref: "../components/parameters.yaml#/limit"
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/Client" }
+
+export:
+  post:
+    tags: [Clients]
+    summary: Export clients as CSV.
+    description: Returns a presigned download URL — the file is generated async.
+    operationId: exportClients
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              filters:
+                type: object
+                properties:
+                  hasUpcoming: { type: boolean }
+                  tag:         { type: string }
+    responses:
+      "202":
+        description: Export queued.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jobId]
+              properties:
+                jobId:        { type: string, format: uuid }
+                statusUrl:    { type: string, format: uri }
+                expectedReadyAt: { type: string, format: date-time }

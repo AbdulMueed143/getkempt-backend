@@ -1,0 +1,122 @@
+# =============================================================================
+#  Notifications — the in-app alert bell + push device registration.
+# =============================================================================
+
+collection:
+  get:
+    tags: [Notifications]
+    summary: List notifications for the current user.
+    operationId: listNotifications
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - name: unreadOnly
+        in: query
+        schema: { type: boolean, default: false }
+      - name: type
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/NotificationType" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/Notification" }
+                    unreadCount: { type: integer }
+
+read:
+  parameters:
+    - name: notificationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  post:
+    tags: [Notifications]
+    summary: Mark a single notification as read.
+    operationId: markNotificationRead
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+readAll:
+  post:
+    tags: [Notifications]
+    summary: Mark all notifications as read.
+    operationId: markAllNotificationsRead
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+devices:
+  get:
+    tags: [Notifications]
+    summary: List registered push devices for this user.
+    operationId: listPushDevices
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/PushDevice" }
+  post:
+    tags: [Notifications]
+    summary: Register a push token (called on app launch).
+    operationId: registerPushDevice
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/PushDeviceRegisterRequest" }
+    responses:
+      "201":
+        description: Registered.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/PushDevice" }
+
+device:
+  parameters:
+    - name: deviceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  delete:
+    tags: [Notifications]
+    summary: Remove a push device (sign-out, "Forget this device").
+    operationId: unregisterPushDevice
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+preferences:
+  get:
+    tags: [Notifications]
+    summary: Get the user's notification preferences.
+    operationId: getNotificationPreferences
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/NotificationPreferences" }
+  put:
+    tags: [Notifications]
+    summary: Update notification preferences.
+    operationId: updateNotificationPreferences
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/NotificationPreferences" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/NotificationPreferences" }

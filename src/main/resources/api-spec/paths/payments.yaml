@@ -1,0 +1,367 @@
+# =============================================================================
+#  Payments — Stripe Connect (Standard / Express).
+#
+#  The platform is a Stripe Connect application: each shop holds its own
+#  connected account and Stripe routes funds directly there. Our application
+#  fee (platform commission) is configured per environment.
+# =============================================================================
+
+connectOnboard:
+  post:
+    tags: [Payments]
+    summary: Begin / continue Stripe Connect onboarding.
+    description: |
+      Creates a Stripe Account Link and returns a redirect URL the user
+      should be sent to. On completion, Stripe POSTs to `/webhooks/stripe`
+      with `account.updated`, which the backend uses to flip
+      `stripeConnected` on the shop and to refresh requirements.
+    operationId: startStripeOnboard
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              returnUrl:  { type: string, format: uri }
+              refreshUrl: { type: string, format: uri }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StripeConnectOnboardResponse" }
+
+connectStatus:
+  get:
+    tags: [Payments]
+    summary: Get the connected account status.
+    operationId: getStripeConnectStatus
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/StripeConnectStatus" }
+
+connectDashboardLink:
+  post:
+    tags: [Payments]
+    summary: Get a one-time link to the Stripe Express dashboard.
+    operationId: getStripeDashboardLink
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url: { type: string, format: uri }
+                expiresAt: { type: string, format: date-time }
+
+intents:
+  get:
+    tags: [Payments]
+    summary: List PaymentIntents.
+    operationId: listPaymentIntents
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - name: bookingId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: clientId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: status
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/PaymentIntentStatus" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/PaymentIntent" }
+  post:
+    tags: [Payments]
+    summary: Create a PaymentIntent (deposit, full upfront, no-show fee, etc.).
+    description: |
+      Returns a PaymentIntent with a `clientSecret` that the frontend uses
+      to confirm with Stripe.js. For walk-in / in-store payment via
+      Terminal, omit `clientSecret` and pass `paymentMethodType=card_present`.
+    operationId: createPaymentIntent
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/PaymentIntentCreateRequest" }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/PaymentIntent" }
+
+intent:
+  parameters:
+    - name: intentId
+      in: path
+      required: true
+      schema: { type: string }
+  get:
+    tags: [Payments]
+    summary: Get a PaymentIntent.
+    operationId: getPaymentIntent
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/PaymentIntent" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+
+capture:
+  parameters:
+    - name: intentId
+      in: path
+      required: true
+      schema: { type: string }
+  post:
+    tags: [Payments]
+    summary: Capture a manual-capture PaymentIntent (e.g. on appointment completion).
+    operationId: capturePaymentIntent
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              amountToCapture: { $ref: "../components/schemas.yaml#/Money" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/PaymentIntent" }
+
+cancelIntent:
+  parameters:
+    - name: intentId
+      in: path
+      required: true
+      schema: { type: string }
+  post:
+    tags: [Payments]
+    summary: Cancel an uncaptured / unconfirmed PaymentIntent.
+    operationId: cancelPaymentIntent
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/PaymentIntent" }
+
+charges:
+  get:
+    tags: [Payments]
+    summary: List successful charges.
+    operationId: listCharges
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - $ref: "../components/parameters.yaml#/fromDate"
+      - $ref: "../components/parameters.yaml#/toDate"
+      - name: clientId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: bookingId
+        in: query
+        schema: { type: string, format: uuid }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/Charge" }
+
+charge:
+  parameters:
+    - name: chargeId
+      in: path
+      required: true
+      schema: { type: string }
+  get:
+    tags: [Payments]
+    summary: Get a charge.
+    operationId: getCharge
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Charge" }
+
+refund:
+  parameters:
+    - name: chargeId
+      in: path
+      required: true
+      schema: { type: string }
+  post:
+    tags: [Payments]
+    summary: Refund a charge (full or partial).
+    operationId: refundCharge
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/RefundRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Charge" }
+
+payouts:
+  get:
+    tags: [Payments]
+    summary: List payouts to the shop's bank account.
+    operationId: listPayouts
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/Payout" }
+
+giftCards:
+  get:
+    tags: [Payments]
+    summary: List gift cards.
+    operationId: listGiftCards
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - name: status
+        in: query
+        schema: { type: string, enum: [active, redeemed, expired, revoked] }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/GiftCard" }
+  post:
+    tags: [Payments]
+    summary: Sell a gift card.
+    description: |
+      Creates the gift card record and, if `purchasedByClientId` is set,
+      a PaymentIntent for the buyer. Optionally emails the recipient with
+      the redemption code.
+    operationId: createGiftCard
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/GiftCardCreateRequest" }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                giftCard:      { $ref: "../components/schemas.yaml#/GiftCard" }
+                paymentIntent: { $ref: "../components/schemas.yaml#/PaymentIntent", nullable: true }
+
+giftCardRedeem:
+  parameters:
+    - name: code
+      in: path
+      required: true
+      schema: { type: string }
+  post:
+    tags: [Payments]
+    summary: Redeem a gift card against a booking.
+    operationId: redeemGiftCard
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [amount]
+            properties:
+              amount:     { $ref: "../components/schemas.yaml#/Money" }
+              bookingId:  { type: string, format: uuid, nullable: true }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/GiftCard" }
+      "409":
+        description: Insufficient balance / expired / revoked.
+
+methods:
+  get:
+    tags: [Payments]
+    summary: List the shop's accepted payment methods (per StoreSettings).
+    description: Equivalent to a slice of `/store/settings` for client convenience.
+    operationId: listPaymentMethods
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paymentMode:     { $ref: "../components/schemas.yaml#/PaymentMode" }
+                depositType:     { $ref: "../components/schemas.yaml#/DepositType" }
+                depositValue:    { type: number }
+                inStoreMethods:
+                  type: array
+                  items: { $ref: "../components/schemas.yaml#/InStoreMethod" }
+                stripeConnected: { type: boolean }

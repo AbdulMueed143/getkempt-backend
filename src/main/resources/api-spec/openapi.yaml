@@ -1,0 +1,313 @@
+# =============================================================================
+#  GetKempt — Backend API · OpenAPI 3.0.3 Specification
+#  Entry point. References paths/*.yaml and components/*.yaml.
+# =============================================================================
+openapi: 3.0.3
+
+info:
+  title: GetKempt API
+  version: 1.0.0-rc.1
+  description: |
+    Salon & barbershop management platform — REST API.
+    Backend contract powering the GetKempt web app, public booking widget, and
+    forthcoming client / staff mobile apps.
+
+    - All times are ISO-8601 UTC.
+    - All money is in integer cents (AUD).
+    - All authenticated endpoints are scoped to the calling user's shop.
+    - See `docs/` in this package for prose explanations of multi-tenancy,
+      the booking lifecycle, payments, and webhooks.
+  contact:
+    name: GetKempt Engineering
+    email: engineering@getkempt.co
+    url: https://getkempt.co
+  license:
+    name: Proprietary — Internal Use Only
+  termsOfService: https://getkempt.co/terms
+
+servers:
+  - url: https://api.getkempt.co/api/v1
+    description: Production
+  - url: https://staging-api.getkempt.co/api/v1
+    description: Staging
+  - url: http://localhost:4000/api/v1
+    description: Local development
+
+# -----------------------------------------------------------------------------
+#  Tags — used by Redoc / Swagger UI to group operations in the rendered docs.
+# -----------------------------------------------------------------------------
+tags:
+  - name: Auth
+    description: Signup, login, password reset, token refresh.
+  - name: Users
+    description: Current user account + personal profile.
+  - name: Staff
+    description: Staff members of the shop (owner / manager / staff roles).
+  - name: Clients
+    description: Customer records — created automatically on first booking.
+  - name: Services
+    description: Service catalogue (haircut, manicure, etc.).
+  - name: Packages
+    description: Bundles of ≥ 2 services with an optional discount.
+  - name: Bookings
+    description: Appointments — the heart of the system.
+  - name: Availability
+    description: Per-staff weekly schedules + date-specific overrides.
+  - name: Visits
+    description: Post-appointment review (attended / no-show).
+  - name: Loyalty
+    description: Sequential loyalty programs and per-client progression.
+  - name: Store
+    description: Tenant-level profile and settings.
+  - name: Campaigns
+    description: Async broadcast email / SMS / push to client segments.
+  - name: Reminders
+    description: Automated reminder rule engine for booking events.
+  - name: Dashboard
+    description: Aggregated stats and charts powering the home page.
+  - name: Payments
+    description: Stripe Connect — charges, deposits, refunds, payouts.
+  - name: Billing
+    description: Subscription, SMS credits, invoices for the shop itself.
+  - name: Notifications
+    description: In-app alert bell + push-device registration.
+  - name: Uploads
+    description: Presigned URLs for direct-to-S3/R2 image upload.
+  - name: Public
+    description: Unauthenticated endpoints powering the client booking widget.
+  - name: Webhooks
+    description: Inbound (Stripe) and outbound (delivery callbacks) webhooks.
+
+# -----------------------------------------------------------------------------
+#  Security — applied globally; individual operations may opt out (Public).
+# -----------------------------------------------------------------------------
+security:
+  - bearerJwt: []
+
+# -----------------------------------------------------------------------------
+#  Paths — each is a $ref into ./paths/<domain>.yaml
+# -----------------------------------------------------------------------------
+paths:
+  # ── Auth ────────────────────────────────────────────────────────────────
+  /auth/signup:                  { $ref: "./paths/auth.yaml#/signup" }
+  /auth/login:                   { $ref: "./paths/auth.yaml#/login" }
+  /auth/logout:                  { $ref: "./paths/auth.yaml#/logout" }
+  /auth/refresh:                 { $ref: "./paths/auth.yaml#/refresh" }
+  /auth/forgot-password:         { $ref: "./paths/auth.yaml#/forgotPassword" }
+  /auth/reset-password:          { $ref: "./paths/auth.yaml#/resetPassword" }
+  /auth/verify-email:            { $ref: "./paths/auth.yaml#/verifyEmail" }
+  /auth/resend-verification:     { $ref: "./paths/auth.yaml#/resendVerification" }
+
+  # ── Users ───────────────────────────────────────────────────────────────
+  /users/me:                     { $ref: "./paths/users.yaml#/me" }
+  /users/me/password:            { $ref: "./paths/users.yaml#/password" }
+  /users/me/avatar:              { $ref: "./paths/users.yaml#/avatar" }
+  /users/me/sessions:            { $ref: "./paths/users.yaml#/sessions" }
+
+  # ── Staff ───────────────────────────────────────────────────────────────
+  /staff:                        { $ref: "./paths/staff.yaml#/collection" }
+  /staff/{staffId}:              { $ref: "./paths/staff.yaml#/item" }
+  /staff/{staffId}/services:     { $ref: "./paths/staff.yaml#/services" }
+  /staff/{staffId}/avatar:       { $ref: "./paths/staff.yaml#/avatar" }
+  /staff/{staffId}/deactivate:   { $ref: "./paths/staff.yaml#/deactivate" }
+  /staff/{staffId}/reactivate:   { $ref: "./paths/staff.yaml#/reactivate" }
+  /staff/invitations:            { $ref: "./paths/staff.yaml#/invitations" }
+  /staff/invitations/{invitationId}: { $ref: "./paths/staff.yaml#/invitation" }
+  /staff/invitations/{invitationId}/resend: { $ref: "./paths/staff.yaml#/invitationResend" }
+
+  # ── Clients ─────────────────────────────────────────────────────────────
+  /clients:                      { $ref: "./paths/clients.yaml#/collection" }
+  /clients/{clientId}:           { $ref: "./paths/clients.yaml#/item" }
+  /clients/{clientId}/bookings:  { $ref: "./paths/clients.yaml#/bookings" }
+  /clients/{clientId}/notes:     { $ref: "./paths/clients.yaml#/notes" }
+  /clients/{clientId}/notes/{noteId}: { $ref: "./paths/clients.yaml#/note" }
+  /clients/{clientId}/loyalty:   { $ref: "./paths/clients.yaml#/loyalty" }
+  /clients/{clientId}/merge:     { $ref: "./paths/clients.yaml#/merge" }
+  /clients/search:               { $ref: "./paths/clients.yaml#/search" }
+  /clients/export:               { $ref: "./paths/clients.yaml#/export" }
+
+  # ── Services ────────────────────────────────────────────────────────────
+  /services:                     { $ref: "./paths/services.yaml#/collection" }
+  /services/{serviceId}:         { $ref: "./paths/services.yaml#/item" }
+  /services/{serviceId}/image:   { $ref: "./paths/services.yaml#/image" }
+  /services/{serviceId}/staff:   { $ref: "./paths/services.yaml#/staff" }
+  /services/{serviceId}/duplicate: { $ref: "./paths/services.yaml#/duplicate" }
+  /services/{serviceId}/archive: { $ref: "./paths/services.yaml#/archive" }
+  /services/reorder:             { $ref: "./paths/services.yaml#/reorder" }
+  /services/categories:          { $ref: "./paths/services.yaml#/categories" }
+
+  # ── Packages ────────────────────────────────────────────────────────────
+  /packages:                     { $ref: "./paths/packages.yaml#/collection" }
+  /packages/{packageId}:         { $ref: "./paths/packages.yaml#/item" }
+  /packages/{packageId}/image:   { $ref: "./paths/packages.yaml#/image" }
+  /packages/{packageId}/archive: { $ref: "./paths/packages.yaml#/archive" }
+  /packages/{packageId}/duplicate: { $ref: "./paths/packages.yaml#/duplicate" }
+  /packages/{packageId}/preview-price: { $ref: "./paths/packages.yaml#/previewPrice" }
+
+  # ── Bookings ────────────────────────────────────────────────────────────
+  /bookings:                     { $ref: "./paths/bookings.yaml#/collection" }
+  /bookings/{bookingId}:         { $ref: "./paths/bookings.yaml#/item" }
+  /bookings/{bookingId}/cancel:  { $ref: "./paths/bookings.yaml#/cancel" }
+  /bookings/{bookingId}/reschedule: { $ref: "./paths/bookings.yaml#/reschedule" }
+  /bookings/{bookingId}/confirm: { $ref: "./paths/bookings.yaml#/confirm" }
+  /bookings/{bookingId}/complete: { $ref: "./paths/bookings.yaml#/complete" }
+  /bookings/{bookingId}/no-show: { $ref: "./paths/bookings.yaml#/noShow" }
+  /bookings/{bookingId}/notes:   { $ref: "./paths/bookings.yaml#/notes" }
+  /bookings/calendar:            { $ref: "./paths/bookings.yaml#/calendar" }
+  /bookings/slots/search:        { $ref: "./paths/bookings.yaml#/slotSearch" }
+  /bookings/conflicts/check:     { $ref: "./paths/bookings.yaml#/conflictsCheck" }
+  /bookings/bulk:                { $ref: "./paths/bookings.yaml#/bulk" }
+  /bookings/export:              { $ref: "./paths/bookings.yaml#/export" }
+  /bookings/ical:                { $ref: "./paths/bookings.yaml#/ical" }
+
+  # ── Availability ────────────────────────────────────────────────────────
+  /availability/{staffId}/weekly: { $ref: "./paths/availability.yaml#/weekly" }
+  /availability/{staffId}/overrides: { $ref: "./paths/availability.yaml#/overrides" }
+  /availability/{staffId}/overrides/{overrideId}: { $ref: "./paths/availability.yaml#/override" }
+  /availability/{staffId}/copy:  { $ref: "./paths/availability.yaml#/copy" }
+  /availability/{staffId}/timeline: { $ref: "./paths/availability.yaml#/timeline" }
+  /availability/{staffId}/breaks: { $ref: "./paths/availability.yaml#/breaks" }
+  /availability/{staffId}/breaks/{breakId}: { $ref: "./paths/availability.yaml#/break" }
+  /availability/bulk-update:     { $ref: "./paths/availability.yaml#/bulkUpdate" }
+  /availability/holidays:        { $ref: "./paths/availability.yaml#/holidays" }
+
+  # ── Visits ──────────────────────────────────────────────────────────────
+  /visits:                       { $ref: "./paths/visits.yaml#/collection" }
+  /visits/{appointmentId}:       { $ref: "./paths/visits.yaml#/item" }
+  /visits/{appointmentId}/mark-attended: { $ref: "./paths/visits.yaml#/markAttended" }
+  /visits/{appointmentId}/mark-no-show: { $ref: "./paths/visits.yaml#/markNoShow" }
+  /visits/bulk:                  { $ref: "./paths/visits.yaml#/bulk" }
+  /visits/stats:                 { $ref: "./paths/visits.yaml#/stats" }
+
+  # ── Loyalty ─────────────────────────────────────────────────────────────
+  /loyalty/programs:             { $ref: "./paths/loyalty.yaml#/programs" }
+  /loyalty/programs/{programId}: { $ref: "./paths/loyalty.yaml#/program" }
+  /loyalty/programs/{programId}/activate: { $ref: "./paths/loyalty.yaml#/activate" }
+  /loyalty/programs/{programId}/pause: { $ref: "./paths/loyalty.yaml#/pause" }
+  /loyalty/programs/{programId}/duplicate: { $ref: "./paths/loyalty.yaml#/duplicate" }
+  /loyalty/programs/reorder:     { $ref: "./paths/loyalty.yaml#/reorder" }
+  /loyalty/clients/{clientId}/progress: { $ref: "./paths/loyalty.yaml#/clientProgress" }
+  /loyalty/rewards:              { $ref: "./paths/loyalty.yaml#/rewards" }
+  /loyalty/rewards/{rewardId}/redeem: { $ref: "./paths/loyalty.yaml#/redeem" }
+  /loyalty/rewards/{rewardId}/revoke: { $ref: "./paths/loyalty.yaml#/revoke" }
+  /loyalty/stats:                { $ref: "./paths/loyalty.yaml#/stats" }
+
+  # ── Store ───────────────────────────────────────────────────────────────
+  /store/profile:                { $ref: "./paths/store.yaml#/profile" }
+  /store/profile/logo:           { $ref: "./paths/store.yaml#/logo" }
+  /store/profile/google-photos/{photoReference}: { $ref: "./paths/store.yaml#/googlePhoto" }
+  /store/settings:               { $ref: "./paths/store.yaml#/settings" }
+  /store/holidays:               { $ref: "./paths/store.yaml#/holidays" }
+  /store/holidays/{holidayId}:   { $ref: "./paths/store.yaml#/holiday" }
+  /store/holidays/import:        { $ref: "./paths/store.yaml#/holidaysImport" }
+  /store/surcharge-rules:        { $ref: "./paths/store.yaml#/surchargeRules" }
+  /store/surcharge-rules/{ruleId}: { $ref: "./paths/store.yaml#/surchargeRule" }
+  /store/cancellation-policy:    { $ref: "./paths/store.yaml#/cancellationPolicy" }
+  /store/cancellation-policy/rules: { $ref: "./paths/store.yaml#/cancellationRules" }
+  /store/cancellation-policy/rules/{ruleId}: { $ref: "./paths/store.yaml#/cancellationRule" }
+  /store/privacy-policy:         { $ref: "./paths/store.yaml#/privacyPolicy" }
+
+  # ── Campaigns ───────────────────────────────────────────────────────────
+  /campaigns:                    { $ref: "./paths/campaigns.yaml#/collection" }
+  /campaigns/{campaignId}:       { $ref: "./paths/campaigns.yaml#/item" }
+  /campaigns/{campaignId}/cancel: { $ref: "./paths/campaigns.yaml#/cancel" }
+  /campaigns/estimate:           { $ref: "./paths/campaigns.yaml#/estimate" }
+  /campaigns/preview:            { $ref: "./paths/campaigns.yaml#/preview" }
+  /campaigns/{campaignId}/stats: { $ref: "./paths/campaigns.yaml#/stats" }
+
+  # ── Reminders ───────────────────────────────────────────────────────────
+  /reminders/rules:              { $ref: "./paths/reminders.yaml#/rules" }
+  /reminders/rules/{ruleId}:     { $ref: "./paths/reminders.yaml#/rule" }
+  /reminders/rules/{ruleId}/toggle: { $ref: "./paths/reminders.yaml#/toggle" }
+  /reminders/rules/{ruleId}/test: { $ref: "./paths/reminders.yaml#/test" }
+  /reminders/settings:           { $ref: "./paths/reminders.yaml#/settings" }
+  /reminders/stats:              { $ref: "./paths/reminders.yaml#/stats" }
+  /reminders/templates:          { $ref: "./paths/reminders.yaml#/templates" }
+  /reminders/templates/variables: { $ref: "./paths/reminders.yaml#/templateVariables" }
+  /reminders/queue:              { $ref: "./paths/reminders.yaml#/queue" }
+
+  # ── Dashboard ───────────────────────────────────────────────────────────
+  /dashboard/stats:              { $ref: "./paths/dashboard.yaml#/stats" }
+  /dashboard/chart:              { $ref: "./paths/dashboard.yaml#/chart" }
+  /dashboard/upcoming-bookings:  { $ref: "./paths/dashboard.yaml#/upcomingBookings" }
+  /dashboard/alerts:             { $ref: "./paths/dashboard.yaml#/alerts" }
+  /dashboard/alerts/{alertId}/dismiss: { $ref: "./paths/dashboard.yaml#/dismissAlert" }
+
+  # ── Retail (products + POS sales — added post-v1, see schemas.yaml §21) ──
+  /products:                     { $ref: "./paths/products.yaml#/collection" }
+  /products/{productId}:         { $ref: "./paths/products.yaml#/item" }
+  /products/{productId}/stock-adjustments: { $ref: "./paths/products.yaml#/stockAdjustments" }
+  /sales:                        { $ref: "./paths/sales.yaml#/collection" }
+  /sales/{saleId}:                { $ref: "./paths/sales.yaml#/item" }
+  /sales/{saleId}/void:           { $ref: "./paths/sales.yaml#/void" }
+
+  # ── Payments ────────────────────────────────────────────────────────────
+  /payments/connect/onboard:     { $ref: "./paths/payments.yaml#/connectOnboard" }
+  /payments/connect/status:      { $ref: "./paths/payments.yaml#/connectStatus" }
+  /payments/connect/dashboard-link: { $ref: "./paths/payments.yaml#/connectDashboardLink" }
+  /payments/intents:             { $ref: "./paths/payments.yaml#/intents" }
+  /payments/intents/{intentId}:  { $ref: "./paths/payments.yaml#/intent" }
+  /payments/intents/{intentId}/capture: { $ref: "./paths/payments.yaml#/capture" }
+  /payments/intents/{intentId}/cancel: { $ref: "./paths/payments.yaml#/cancelIntent" }
+  /payments/charges:             { $ref: "./paths/payments.yaml#/charges" }
+  /payments/charges/{chargeId}:  { $ref: "./paths/payments.yaml#/charge" }
+  /payments/charges/{chargeId}/refund: { $ref: "./paths/payments.yaml#/refund" }
+  /payments/payouts:             { $ref: "./paths/payments.yaml#/payouts" }
+  /payments/gift-cards:          { $ref: "./paths/payments.yaml#/giftCards" }
+  /payments/gift-cards/{code}/redeem: { $ref: "./paths/payments.yaml#/giftCardRedeem" }
+  /payments/methods:             { $ref: "./paths/payments.yaml#/methods" }
+
+  # ── Billing (subscription for the shop itself) ──────────────────────────
+  /billing/subscription:         { $ref: "./paths/billing.yaml#/subscription" }
+  /billing/subscription/preview: { $ref: "./paths/billing.yaml#/subscriptionPreview" }
+  /billing/subscription/cancel:  { $ref: "./paths/billing.yaml#/subscriptionCancel" }
+  /billing/payment-method:       { $ref: "./paths/billing.yaml#/paymentMethod" }
+  /billing/sms-credits:          { $ref: "./paths/billing.yaml#/smsCredits" }
+  /billing/sms-credits/purchase: { $ref: "./paths/billing.yaml#/smsPurchase" }
+  /billing/invoices:             { $ref: "./paths/billing.yaml#/invoices" }
+  /billing/invoices/{invoiceId}: { $ref: "./paths/billing.yaml#/invoice" }
+  /billing/invoices/{invoiceId}/pdf: { $ref: "./paths/billing.yaml#/invoicePdf" }
+
+  # ── Notifications ───────────────────────────────────────────────────────
+  /notifications:                { $ref: "./paths/notifications.yaml#/collection" }
+  /notifications/{notificationId}/read: { $ref: "./paths/notifications.yaml#/read" }
+  /notifications/read-all:       { $ref: "./paths/notifications.yaml#/readAll" }
+  /notifications/devices:        { $ref: "./paths/notifications.yaml#/devices" }
+  /notifications/devices/{deviceId}: { $ref: "./paths/notifications.yaml#/device" }
+  /notifications/preferences:    { $ref: "./paths/notifications.yaml#/preferences" }
+
+  # ── Uploads ─────────────────────────────────────────────────────────────
+  /uploads/presign:              { $ref: "./paths/uploads.yaml#/presign" }
+  /uploads/{uploadId}/confirm:   { $ref: "./paths/uploads.yaml#/confirm" }
+
+  # ── Public booking widget (unauthenticated, slug-addressed) ─────────────
+  /public/shops/{slug}:                  { $ref: "./paths/public.yaml#/shop" }
+  /public/shops/{slug}/services:         { $ref: "./paths/public.yaml#/services" }
+  /public/shops/{slug}/packages:         { $ref: "./paths/public.yaml#/packages" }
+  /public/shops/{slug}/staff:            { $ref: "./paths/public.yaml#/staff" }
+  /public/shops/{slug}/slots:            { $ref: "./paths/public.yaml#/slots" }
+  /public/shops/{slug}/bookings:         { $ref: "./paths/public.yaml#/bookings" }
+  /public/bookings/{token}:              { $ref: "./paths/public.yaml#/booking" }
+  /public/bookings/{token}/cancel:       { $ref: "./paths/public.yaml#/cancel" }
+
+  # ── Webhooks ────────────────────────────────────────────────────────────
+  /webhooks/stripe:              { $ref: "./paths/webhooks.yaml#/stripe" }
+  /webhooks/twilio/sms-status:   { $ref: "./paths/webhooks.yaml#/twilio" }
+  /webhooks/sendgrid/email-status: { $ref: "./paths/webhooks.yaml#/sendgrid" }
+  /webhooks/expo/push-status:    { $ref: "./paths/webhooks.yaml#/expo" }
+
+# -----------------------------------------------------------------------------
+#  Components — all schemas, parameters, responses, and security schemes live
+#  in separate files for readability. The bundler inlines them at build time.
+# -----------------------------------------------------------------------------
+components:
+  securitySchemes:
+    bearerJwt:
+      $ref: "./components/securitySchemes.yaml#/bearerJwt"
+    apiKey:
+      $ref: "./components/securitySchemes.yaml#/apiKey"
+    webhookSignature:
+      $ref: "./components/securitySchemes.yaml#/webhookSignature"
+
+  # NOTE: parameters/responses/schemas are referenced inside paths/*.yaml
+  # directly via relative $refs — they don't need to be re-declared here.

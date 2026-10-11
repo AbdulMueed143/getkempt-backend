@@ -1,0 +1,228 @@
+# =============================================================================
+#  Services — the shop's service catalogue.
+# =============================================================================
+
+collection:
+  get:
+    tags: [Services]
+    summary: List services.
+    operationId: listServices
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - $ref: "../components/parameters.yaml#/sort"
+      - name: category
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/ServiceCategory" }
+      - name: status
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/ServiceStatus" }
+      - name: staffId
+        in: query
+        description: Filter to services performable by this staff member.
+        schema: { type: string, format: uuid }
+      - name: q
+        in: query
+        schema: { type: string }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/Service" }
+  post:
+    tags: [Services]
+    summary: Create a service.
+    operationId: createService
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ServiceCreateRequest" }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Service" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+
+item:
+  parameters:
+    - $ref: "../components/parameters.yaml#/serviceId"
+  get:
+    tags: [Services]
+    summary: Get a service.
+    operationId: getService
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Service" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+  patch:
+    tags: [Services]
+    summary: Update a service.
+    description: |
+      Changing duration / price does NOT retroactively modify existing
+      bookings — their `serviceName`, `price`, and `durationMinutes`
+      are snapshotted at booking time.
+    operationId: updateService
+    parameters:
+      - $ref: "../components/parameters.yaml#/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ServiceUpdateRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Service" }
+      "412": { $ref: "../components/responses.yaml#/PreconditionFailed" }
+  delete:
+    tags: [Services]
+    summary: Soft-delete a service.
+    operationId: deleteService
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+      "409":
+        description: Cannot delete — service is referenced by an active package or future bookings.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Error" }
+
+image:
+  parameters:
+    - $ref: "../components/parameters.yaml#/serviceId"
+  put:
+    tags: [Services]
+    summary: Set the cover image (via an upload from `/uploads/presign`).
+    operationId: setServiceImage
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [uploadId]
+            properties:
+              uploadId: { type: string, format: uuid }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Service" }
+  delete:
+    tags: [Services]
+    summary: Remove the cover image.
+    operationId: deleteServiceImage
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+staff:
+  parameters:
+    - $ref: "../components/parameters.yaml#/serviceId"
+  put:
+    tags: [Services]
+    summary: Replace the set of staff who can perform this service.
+    operationId: setServiceStaff
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [staffIds]
+            properties:
+              staffIds:
+                type: array
+                items: { type: string, format: uuid }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Service" }
+
+duplicate:
+  parameters:
+    - $ref: "../components/parameters.yaml#/serviceId"
+  post:
+    tags: [Services]
+    summary: Duplicate a service (returns a new draft).
+    operationId: duplicateService
+    responses:
+      "201":
+        description: Duplicate created.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Service" }
+
+archive:
+  parameters:
+    - $ref: "../components/parameters.yaml#/serviceId"
+  post:
+    tags: [Services]
+    summary: Archive a service — hidden from booking UIs but historical refs preserved.
+    operationId: archiveService
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Service" }
+
+reorder:
+  post:
+    tags: [Services]
+    summary: Set the display order of services in the catalogue.
+    operationId: reorderServices
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [serviceIds]
+            properties:
+              serviceIds:
+                type: array
+                description: New order. Index 0 = displayOrder 0.
+                items: { type: string, format: uuid }
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+categories:
+  get:
+    tags: [Services]
+    summary: Get the canonical category list (with localised labels).
+    operationId: listServiceCategories
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                required: [value, label]
+                properties:
+                  value: { $ref: "../components/schemas.yaml#/ServiceCategory" }
+                  label: { type: string }
+                  color: { type: string }
+                  bg:    { type: string }

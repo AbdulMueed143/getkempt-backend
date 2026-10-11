@@ -1,0 +1,114 @@
+# =============================================================================
+#  Reusable error responses — referenced via $ref from paths/*.yaml.
+# =============================================================================
+
+BadRequest:
+  description: Malformed request — JSON parse error, invalid query, etc.
+  content:
+    application/json:
+      schema:
+        $ref: "./schemas.yaml#/Error"
+      example:
+        code: "bad_request"
+        message: "Malformed JSON body"
+        requestId: "req_01HRMK4N9X3T7Q"
+
+Unauthorized:
+  description: Missing, expired, or revoked access token.
+  content:
+    application/json:
+      schema:
+        $ref: "./schemas.yaml#/Error"
+      example:
+        code: "unauthorized"
+        message: "Access token has expired"
+        requestId: "req_01HRMK4N9X3T7Q"
+
+Forbidden:
+  description: Authenticated but the role / permission lacks the operation.
+  content:
+    application/json:
+      schema:
+        $ref: "./schemas.yaml#/Error"
+      example:
+        code: "forbidden"
+        message: "Role 'staff' cannot delete bookings created by other users"
+        requestId: "req_01HRMK4N9X3T7Q"
+
+NotFound:
+  description: Resource does not exist OR the caller's shop has no access.
+  content:
+    application/json:
+      schema:
+        $ref: "./schemas.yaml#/Error"
+      example:
+        code: "not_found"
+        message: "Booking with id bk_… not found"
+
+Conflict:
+  description: Conflict — duplicate, overlapping slot, version mismatch, etc.
+  content:
+    application/json:
+      schema:
+        $ref: "./schemas.yaml#/Error"
+      example:
+        code: "conflict"
+        message: "Time slot is no longer available"
+
+UnprocessableEntity:
+  description: Request body parsed but failed business validation.
+  content:
+    application/json:
+      schema:
+        $ref: "./schemas.yaml#/ValidationError"
+      example:
+        code: "validation_failed"
+        message: "One or more fields are invalid"
+        fields:
+          - field: "email"
+            message: "Must be a valid email address"
+          - field: "price"
+            message: "Must be ≥ 0"
+
+PreconditionFailed:
+  description: Optimistic-lock `If-Match` mismatch — entity was updated concurrently.
+  content:
+    application/json:
+      schema:
+        $ref: "./schemas.yaml#/Error"
+
+TooManyRequests:
+  description: Rate limit exceeded. Retry after the `Retry-After` header.
+  headers:
+    Retry-After:
+      schema:
+        type: integer
+      description: Seconds to wait before retrying.
+  content:
+    application/json:
+      schema:
+        $ref: "./schemas.yaml#/Error"
+      example:
+        code: "rate_limited"
+        message: "Too many requests — retry in 30s"
+
+InternalServerError:
+  description: Unhandled error. Logged on the server with the `requestId`.
+  content:
+    application/json:
+      schema:
+        $ref: "./schemas.yaml#/Error"
+      example:
+        code: "internal_error"
+        message: "An unexpected error occurred"
+        requestId: "req_01HRMK4N9X3T7Q"
+
+ServiceUnavailable:
+  description: Dependency (DB, Stripe, Twilio) temporarily unreachable.
+  content:
+    application/json:
+      schema:
+        $ref: "./schemas.yaml#/Error"
+
+NoContent:
+  description: Operation succeeded — empty body.

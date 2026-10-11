@@ -1,0 +1,199 @@
+# =============================================================================
+#  Reusable parameters — referenced from paths/*.yaml via $ref.
+# =============================================================================
+
+# ── Pagination ─────────────────────────────────────────────────────────────
+cursor:
+  name: cursor
+  in: query
+  description: Opaque base64 cursor returned by the previous page response.
+  required: false
+  schema:
+    type: string
+
+limit:
+  name: limit
+  in: query
+  description: Max items to return. Default 25, max 100.
+  required: false
+  schema:
+    type: integer
+    minimum: 1
+    maximum: 100
+    default: 25
+
+# ── Sorting ────────────────────────────────────────────────────────────────
+sort:
+  name: sort
+  in: query
+  description: |
+    Sort key prefixed with `-` for descending. Default per-endpoint.
+    Examples: `-createdAt`, `lastName`, `-totalBookings`.
+  required: false
+  schema:
+    type: string
+
+# ── Date-range filters used by bookings, visits, dashboards ───────────────
+fromDate:
+  name: from
+  in: query
+  description: Inclusive lower bound (ISO-8601 UTC).
+  required: false
+  schema:
+    type: string
+    format: date-time
+
+toDate:
+  name: to
+  in: query
+  description: Exclusive upper bound (ISO-8601 UTC).
+  required: false
+  schema:
+    type: string
+    format: date-time
+
+# ── Headers ────────────────────────────────────────────────────────────────
+idempotencyKey:
+  name: Idempotency-Key
+  in: header
+  description: |
+    Client-supplied UUID v4. Server MUST cache the response for 24h and
+    return the same result on retry. Required on all POST / PUT / PATCH
+    that have side effects.
+  required: false
+  schema:
+    type: string
+    format: uuid
+
+ifMatch:
+  name: If-Match
+  in: header
+  description: |
+    Optimistic concurrency control. Pass the `version` returned in the
+    last GET. Server returns 412 Precondition Failed on stale writes.
+  required: false
+  schema:
+    type: string
+
+acceptLanguage:
+  name: Accept-Language
+  in: header
+  description: BCP-47 locale (e.g. `en-AU`). Default `en-AU`.
+  required: false
+  schema:
+    type: string
+    default: en-AU
+
+requestId:
+  name: X-Request-Id
+  in: header
+  description: Client-supplied trace id. Echoed back in the response.
+  required: false
+  schema:
+    type: string
+
+# ── Common path params ─────────────────────────────────────────────────────
+staffId:
+  name: staffId
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+clientId:
+  name: clientId
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+serviceId:
+  name: serviceId
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+packageId:
+  name: packageId
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+bookingId:
+  name: bookingId
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+productId:
+  name: productId
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+saleId:
+  name: saleId
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+appointmentId:
+  name: appointmentId
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+programId:
+  name: programId
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+rewardId:
+  name: rewardId
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+campaignId:
+  name: campaignId
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+ruleId:
+  name: ruleId
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+shopSlug:
+  name: slug
+  in: path
+  description: URL-safe public identifier of the shop (e.g. `heritage-barbershop`).
+  required: true
+  schema:
+    type: string
+    pattern: "^[a-z0-9-]{3,80}$"

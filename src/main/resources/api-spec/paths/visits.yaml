@@ -1,0 +1,146 @@
+# =============================================================================
+#  Visits — post-appointment review (attended / no-show).
+#
+#  Each appointment record corresponds 1:1 to a booking but is materialised
+#  separately so the Visits page can be queried without scanning the full
+#  bookings table. Triggered on a daily job + on demand when a booking
+#  transitions past its scheduled time.
+# =============================================================================
+
+collection:
+  get:
+    tags: [Visits]
+    summary: List visits (past appointments).
+    operationId: listVisits
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - $ref: "../components/parameters.yaml#/fromDate"
+      - $ref: "../components/parameters.yaml#/toDate"
+      - name: status
+        in: query
+        description: Filter by review status — most common = pending.
+        schema:
+          type: array
+          items: { $ref: "../components/schemas.yaml#/AppointmentStatus" }
+        style: form
+        explode: true
+      - name: staffId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: clientId
+        in: query
+        schema: { type: string, format: uuid }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/AppointmentRecord" }
+
+item:
+  parameters:
+    - $ref: "../components/parameters.yaml#/appointmentId"
+  get:
+    tags: [Visits]
+    summary: Get a single appointment record.
+    operationId: getVisit
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/AppointmentRecord" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+
+markAttended:
+  parameters:
+    - $ref: "../components/parameters.yaml#/appointmentId"
+  post:
+    tags: [Visits]
+    summary: Mark an appointment as attended.
+    description: |
+      Equivalent to completing the underlying booking. Advances loyalty,
+      increments client lifetime spend, and captures any deposit.
+    operationId: markAttended
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/VisitMarkRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/AppointmentRecord" }
+
+markNoShow:
+  parameters:
+    - $ref: "../components/parameters.yaml#/appointmentId"
+  post:
+    tags: [Visits]
+    summary: Mark an appointment as a no-show.
+    description: |
+      Applies the no-show fee per `StoreSettings` if auto-charge is enabled.
+      Optionally accepts an explanatory note (recorded on the appointment).
+    operationId: markNoShow
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/VisitMarkRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/AppointmentRecord" }
+
+bulk:
+  post:
+    tags: [Visits]
+    summary: Bulk-mark multiple appointments.
+    operationId: bulkVisits
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/VisitBulkRequest" }
+    responses:
+      "200":
+        description: Summary.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                succeeded: { type: array, items: { type: string, format: uuid } }
+                failed:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      reason: { type: string }
+
+stats:
+  get:
+    tags: [Visits]
+    summary: Aggregate stats powering the Visits page header.
+    operationId: getVisitStats
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/VisitStats" }

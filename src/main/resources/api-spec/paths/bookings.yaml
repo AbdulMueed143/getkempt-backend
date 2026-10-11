@@ -1,0 +1,489 @@
+# =============================================================================
+#  Bookings — the heart of the product.
+#
+#  State machine:
+#    pending → confirmed → in_progress → completed
+#             ↘ cancelled
+#             ↘ no_show
+#
+#  Each transition has a dedicated endpoint to surface intent and trigger
+#  side-effects (notifications, fee charges, loyalty progress).
+# =============================================================================
+
+collection:
+  get:
+    tags: [Bookings]
+    summary: List bookings.
+    description: |
+      The general-purpose list endpoint. For calendar views, prefer
+      `/bookings/calendar` which is optimised for date-range fetches and
+      includes staff colour metadata.
+    operationId: listBookings
+    parameters:
+      - $ref: "../components/parameters.yaml#/cursor"
+      - $ref: "../components/parameters.yaml#/limit"
+      - $ref: "../components/parameters.yaml#/sort"
+      - $ref: "../components/parameters.yaml#/fromDate"
+      - $ref: "../components/parameters.yaml#/toDate"
+      - name: staffId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: clientId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: serviceId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: status
+        in: query
+        schema:
+          type: array
+          items: { $ref: "../components/schemas.yaml#/BookingStatus" }
+        style: form
+        explode: true
+      - name: source
+        in: query
+        schema: { $ref: "../components/schemas.yaml#/BookingSource" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "../components/schemas.yaml#/Page"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items: { $ref: "../components/schemas.yaml#/Booking" }
+  post:
+    tags: [Bookings]
+    summary: Create a booking.
+    description: |
+      The endpoint is transactional:
+        1. Validates the slot against weekly schedule, overrides, and existing bookings.
+        2. Creates a `Client` inline if `client` is provided.
+        3. Snapshots service name/price/duration onto the booking row.
+        4. Computes applicable surcharges from settings.
+        5. If the shop's `paymentMode` requires a deposit, creates a
+           `PaymentIntent` and returns it in the response so the frontend
+           can confirm with Stripe.js.
+        6. Schedules reminder jobs per the reminder rules.
+        7. Pushes a notification to the bell of staff & owner.
+
+      Returns 409 if the slot is no longer available (race condition).
+      Pass `skipConflictCheck=true` (owner only) to force-book.
+    operationId: createBooking
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/BookingCreateRequest" }
+    responses:
+      "201":
+        description: Created.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [booking]
+              properties:
+                booking:       { $ref: "../components/schemas.yaml#/Booking" }
+                paymentIntent: { $ref: "../components/schemas.yaml#/PaymentIntent", nullable: true }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+
+item:
+  parameters:
+    - $ref: "../components/parameters.yaml#/bookingId"
+  get:
+    tags: [Bookings]
+    summary: Get a booking.
+    operationId: getBooking
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Booking" }
+      "404": { $ref: "../components/responses.yaml#/NotFound" }
+  patch:
+    tags: [Bookings]
+    summary: Update a booking's mutable fields (notes, etc.).
+    description: |
+      Use the dedicated endpoints for state changes / time changes:
+        - `/cancel`, `/reschedule`, `/confirm`, `/complete`, `/no-show`
+    operationId: updateBooking
+    parameters:
+      - $ref: "../components/parameters.yaml#/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/BookingUpdateRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Booking" }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }
+      "412": { $ref: "../components/responses.yaml#/PreconditionFailed" }
+  delete:
+    tags: [Bookings]
+    summary: Hard-delete a draft booking.
+    description: |
+      Only valid for bookings in `pending` status created in the last 5 min.
+      Confirmed bookings must be cancelled via `/cancel`.
+    operationId: deleteBooking
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }
+
+cancel:
+  parameters:
+    - $ref: "../components/parameters.yaml#/bookingId"
+  post:
+    tags: [Bookings]
+    summary: Cancel a booking.
+    description: |
+      Side effects:
+        - Frees the slot for re-booking.
+        - If `chargeFee=true`, applies the shop's cancellation fee policy.
+        - Triggers the `booking_cancelled` reminder rule.
+    operationId: cancelBooking
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/CancelRequest" }
+    responses:
+      "200":
+        description: Cancelled.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Booking" }
+      "409":
+        description: Already cancelled / completed.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Error" }
+
+reschedule:
+  parameters:
+    - $ref: "../components/parameters.yaml#/bookingId"
+  post:
+    tags: [Bookings]
+    summary: Move a booking to a new time / staff member.
+    description: |
+      Re-runs conflict checks at the new slot. Sends `booking_rescheduled`
+      reminder. Preserves payment intents.
+    operationId: rescheduleBooking
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/RescheduleRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Booking" }
+      "409": { $ref: "../components/responses.yaml#/Conflict" }
+
+confirm:
+  parameters:
+    - $ref: "../components/parameters.yaml#/bookingId"
+  post:
+    tags: [Bookings]
+    summary: Move a booking from `pending` to `confirmed`.
+    operationId: confirmBooking
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Booking" }
+
+complete:
+  parameters:
+    - $ref: "../components/parameters.yaml#/bookingId"
+  post:
+    tags: [Bookings]
+    summary: Mark a booking as completed.
+    description: |
+      Side effects:
+        - Captures any uncaptured PaymentIntent.
+        - Increments client lifetime spend + booking count.
+        - Advances loyalty progress.
+    operationId: completeBooking
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              actualEndAt: { type: string, format: date-time, nullable: true,
+                             description: Override the recorded end time if the visit ran short/long. }
+              tip: { $ref: "../components/schemas.yaml#/Money", nullable: true }
+              inStoreMethod:
+                $ref: "../components/schemas.yaml#/InStoreMethod"
+                nullable: true
+                description: >
+                  How payment was actually taken in person, when the booking has no online
+                  PaymentIntent (paymentMode=in_store, or any booking whose price wasn't
+                  collected online). Must be one of the shop's StoreSettings.inStoreMethods
+                  allow-list; omit if payment was already collected online (paymentIntentId
+                  set) or isn't being recorded.
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Booking" }
+
+noShow:
+  parameters:
+    - $ref: "../components/parameters.yaml#/bookingId"
+  post:
+    tags: [Bookings]
+    summary: Mark a booking as a no-show.
+    description: |
+      Triggers the no-show fee charge if the shop's settings auto-charge.
+      The fee amount is computed from `StoreSettings.noShowFeeType/Value`.
+    operationId: markBookingNoShow
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              note: { type: string }
+              chargeFee: { type: boolean,
+                           description: Defaults to the shop's autoCharge setting. }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Booking" }
+
+notes:
+  parameters:
+    - $ref: "../components/parameters.yaml#/bookingId"
+  put:
+    tags: [Bookings]
+    summary: Replace the booking's free-text notes.
+    operationId: setBookingNotes
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [notes]
+            properties:
+              notes: { type: string, maxLength: 2000 }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/Booking" }
+
+calendar:
+  get:
+    tags: [Bookings]
+    summary: Calendar-optimised booking feed (day/week/month).
+    description: |
+      Returns flattened booking blocks for a date range, including the
+      staff colour and overlap-lane metadata used by the front-end's
+      multi-lane time-grid layout.
+
+      Always returns the FULL range — no pagination — so callers should
+      keep ranges to ≤ 31 days. Cache-friendly with `ETag` + `If-None-Match`.
+    operationId: getCalendar
+    parameters:
+      - name: from
+        in: query
+        required: true
+        schema: { type: string, format: date-time }
+      - name: to
+        in: query
+        required: true
+        schema: { type: string, format: date-time }
+      - name: staffIds
+        in: query
+        schema:
+          type: array
+          items: { type: string, format: uuid }
+        style: form
+        explode: true
+      - name: includeBreaks
+        in: query
+        schema: { type: boolean, default: true }
+    responses:
+      "200":
+        description: OK.
+        headers:
+          ETag: { schema: { type: string } }
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bookings, breaks, holidays]
+              properties:
+                bookings:
+                  type: array
+                  items: { $ref: "../components/schemas.yaml#/Booking" }
+                breaks:
+                  type: array
+                  description: Non-bookable time blocks (lunch, prep, leave).
+                  items:
+                    type: object
+                    properties:
+                      staffId: { type: string, format: uuid }
+                      startAt: { type: string, format: date-time }
+                      endAt:   { type: string, format: date-time }
+                      label:   { type: string }
+                holidays:
+                  type: array
+                  items: { $ref: "../components/schemas.yaml#/Holiday" }
+
+slotSearch:
+  post:
+    tags: [Bookings]
+    summary: Search for available time slots for a service / date.
+    description: |
+      The primary helper for the **Create booking** form's "Date & Slot" step.
+      Slots are computed live from staff weekly schedules MINUS existing
+      bookings MINUS overrides MINUS holidays. Respects the shop's
+      `slotInterval` setting.
+    operationId: searchSlots
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/SlotSearchRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slots]
+              properties:
+                slots:
+                  type: array
+                  items: { $ref: "../components/schemas.yaml#/AvailableSlot" }
+
+conflictsCheck:
+  post:
+    tags: [Bookings]
+    summary: Check whether a proposed booking would conflict.
+    description: |
+      Light-weight pre-check used by the form while the user picks staff/time,
+      to surface conflicts before they hit Submit.
+    operationId: checkConflicts
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ConflictCheckRequest" }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/ConflictCheckResponse" }
+
+bulk:
+  post:
+    tags: [Bookings]
+    summary: Apply an action to multiple bookings at once.
+    operationId: bulkBookings
+    parameters:
+      - $ref: "../components/parameters.yaml#/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/BookingBulkRequest" }
+    responses:
+      "200":
+        description: Summary of per-id outcomes.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                succeeded: { type: array, items: { type: string, format: uuid } }
+                failed:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      reason: { type: string }
+
+export:
+  post:
+    tags: [Bookings]
+    summary: Export bookings as CSV.
+    operationId: exportBookings
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              from:    { type: string, format: date }
+              to:      { type: string, format: date }
+              status:
+                type: array
+                items: { $ref: "../components/schemas.yaml#/BookingStatus" }
+    responses:
+      "202":
+        description: Export queued.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jobId: { type: string, format: uuid }
+
+ical:
+  get:
+    tags: [Bookings]
+    summary: Subscribe URL for ICS calendar feed (staff personal calendar).
+    description: |
+      Returns a signed URL the staff member can plug into Google / Apple
+      Calendar. Read-only. The URL contains a per-user secret — never
+      embed in URLs you don't trust.
+    operationId: getIcalFeed
+    parameters:
+      - name: staffId
+        in: query
+        required: false
+        schema: { type: string, format: uuid,
+                   description: Defaults to the calling staff member. }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string, format: uri }

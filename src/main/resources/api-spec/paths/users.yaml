@@ -1,0 +1,105 @@
+# =============================================================================
+#  Users — the currently authenticated user's own account.
+# =============================================================================
+
+me:
+  get:
+    tags: [Users]
+    summary: Get the current user.
+    description: |
+      Returns the `User` derived from the bearer token. Used by the frontend
+      on every page load to hydrate the auth store.
+    operationId: getMe
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/User" }
+      "401": { $ref: "../components/responses.yaml#/Unauthorized" }
+  patch:
+    tags: [Users]
+    summary: Update the current user's personal profile.
+    operationId: updateMe
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              firstName: { type: string }
+              lastName:  { type: string }
+              email:     { type: string, format: email }
+              avatarUrl: { type: string, format: uri, nullable: true }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/User" }
+      "401": { $ref: "../components/responses.yaml#/Unauthorized" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+
+password:
+  post:
+    tags: [Users]
+    summary: Change password (current password required).
+    operationId: changePassword
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "../components/schemas.yaml#/ChangePasswordRequest" }
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+      "401": { $ref: "../components/responses.yaml#/Unauthorized" }
+      "422": { $ref: "../components/responses.yaml#/UnprocessableEntity" }
+
+avatar:
+  put:
+    tags: [Users]
+    summary: Replace the user's avatar.
+    description: Pass an `uploadId` from `/uploads/presign` after PUTing the image.
+    operationId: setAvatar
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [uploadId]
+            properties:
+              uploadId: { type: string, format: uuid }
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema: { $ref: "../components/schemas.yaml#/User" }
+  delete:
+    tags: [Users]
+    summary: Remove the avatar.
+    operationId: deleteAvatar
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }
+
+sessions:
+  get:
+    tags: [Users]
+    summary: List active sessions for the current user.
+    operationId: listSessions
+    responses:
+      "200":
+        description: OK.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "../components/schemas.yaml#/Session" }
+  delete:
+    tags: [Users]
+    summary: Revoke all sessions except the current one.
+    operationId: revokeOtherSessions
+    responses:
+      "204": { $ref: "../components/responses.yaml#/NoContent" }

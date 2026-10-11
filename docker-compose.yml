@@ -1,0 +1,47 @@
+# Local development stack: MongoDB (single-node replica set, required for the
+# multi-document transactions used by booking/sale creation) + the API.
+#
+#   docker compose up -d mongo        # just the database, run the API from Gradle
+#   docker compose up --build         # database + API built from the Dockerfile
+#
+# From the host, connect with:  mongodb://localhost:27017/getkempt?directConnection=true
+
+services:
+  mongo:
+    image: mongo:7
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # Initiates the replica set on first boot; afterwards just reports healthy.
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - "try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}).ok }"
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 10s
+
+  api:
+    build: .
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      SERVER_PORT: "4000"
+      # directConnection avoids replica-set discovery resolving to "localhost"
+      # (the member host recorded by rs.initiate above).
+      MONGODB_URI: mongodb://mongo:27017/getkempt?directConnection=true
+      MONGODB_DATABASE: getkempt
+      JWT_SECRET: ${JWT_SECRET:-local-dev-only-secret-change-me-at-least-32-chars}
+      GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
+
+volumes:
+  mongo-data:

@@ -1,0 +1,48 @@
+# =============================================================================
+#  Security schemes — referenced from openapi.yaml#/components/securitySchemes.
+# =============================================================================
+
+# ── Bearer JWT — primary scheme for all authenticated endpoints ────────────
+# Access tokens are RS256-signed, 15-minute TTL, opaque to the client.
+# Claims:
+#   sub        – userId  (uuid v4)
+#   shop_id    – tenant id; every query is filtered by this server-side
+#   role       – owner | manager | staff
+#   staff_id   – present iff the user is a staff member
+#   permissions – string[] (fine-grained, e.g. ["bookings.write","reports.read"])
+#   iat / exp  – standard
+#   jti        – session id, used for revocation
+bearerJwt:
+  type: http
+  scheme: bearer
+  bearerFormat: JWT
+  description: |
+    Standard OAuth2 / RFC-6750 bearer token.
+    Issued by `POST /auth/login` and refreshed via `POST /auth/refresh`.
+
+    Header:
+    ```
+    Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI…
+    ```
+
+# ── API key — used by server-to-server integrations (Zapier, custom bots) ──
+# Per-shop scoped, generated under /settings → API keys.
+apiKey:
+  type: apiKey
+  in: header
+  name: X-Api-Key
+  description: |
+    Per-tenant integration key. Created and revoked from the shop settings UI.
+    Has the same role/permission model as a user token but never expires.
+
+# ── HMAC signature — used to authenticate incoming webhook requests ────────
+webhookSignature:
+  type: apiKey
+  in: header
+  name: X-GetKempt-Signature
+  description: |
+    HMAC-SHA256 signature of the raw request body, keyed on the per-tenant
+    webhook secret. Required on `/webhooks/*` ingress endpoints.
+
+    Format: `t=<unix_ts>,v1=<hex_digest>`
+    The receiver MUST reject requests where `|now - t| > 300s`.

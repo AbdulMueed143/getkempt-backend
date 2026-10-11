@@ -1,0 +1,26 @@
+# Build output & Gradle caches (NOT the ./gradle wrapper dir, which is needed)
+.gradle/
+build/
+**/build/
+!gradle/
+
+# Version control & IDE
+.git/
+.gitignore
+.idea/
+.vscode/
+*.iml
+
+# Docs & scratch
+*.md
+terminals/
+
+# Local env / secrets — never bake these into an image
+.env
+*.env
+**/application-local.yml
+**/application-local.yaml
+
+# OS cruft
+.DS_Store
+Thumbs.db
